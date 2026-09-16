@@ -1,7 +1,6 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Controllers;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.DTO.LiveClassRequest;
-
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.LiveClassResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Service.LiveClassService;
 import jakarta.validation.Valid;
@@ -122,6 +121,19 @@ public class AdminLiveClassController {
                         liveClassId,
                         request
                 )
+        );
+    }
+
+    // =========================
+    // START CLASS
+    // =========================
+
+    @PostMapping("/{liveClassId}/start")
+    public ResponseEntity<LiveClassResponse> startLiveClass(
+            @PathVariable Long liveClassId
+    ) {
+        return ResponseEntity.ok(
+                liveClassService.startLiveClass(liveClassId)
         );
     }
 

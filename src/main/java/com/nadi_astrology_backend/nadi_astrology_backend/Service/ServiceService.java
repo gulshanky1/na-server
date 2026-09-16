@@ -61,6 +61,13 @@ public class ServiceService {
 
         Service service =
                 serviceTransformer.toEntity(request);
+        if (file != null && !file.isEmpty()) {
+
+            String imageUrl =
+                    cloudinaryService.uploadImage(file);
+
+            service.setImageUrl(imageUrl);
+        }
 
         if (service.getServiceType() == null) {
             service.setServiceType(

@@ -1,15 +1,14 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Controllers;
 
-import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.AccountStatusRequest;
-import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.UserResponse;
-import com.nadi_astrology_backend.nadi_astrology_backend.Security.AuthenticatedUser;
-import com.nadi_astrology_backend.nadi_astrology_backend.Service.AdminUserService;
-import jakarta.validation.Valid;
+import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.AdminUserResponse;
+import com.nadi_astrology_backend.nadi_astrology_backend.Enum.Role;
+import com.nadi_astrology_backend.nadi_astrology_backend.Service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -17,45 +16,62 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AdminUserController {
 
-    private final AdminUserService adminUserService;
+    private final UserService userService;
 
     @GetMapping
-    public ResponseEntity<Page<UserResponse>> getAllUsers(
-            Pageable pageable
+    public ResponseEntity<Page<AdminUserResponse>> getAllUsers(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Role role,
+            @RequestParam(required = false) Boolean accountEnabled,
+            @RequestParam(required = false) Boolean student,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
 
+        Pageable pageable =
+                PageRequest.of(
+                        page,
+                        size,
+                        Sort.by(
+                                Sort.Direction.DESC,
+                                "registeredAt"
+                        )
+                );
+
         return ResponseEntity.ok(
-                adminUserService.getAllUsers(pageable)
+                userService.getAllUsers(
+                        search,
+                        role,
+                        accountEnabled,
+                        student,
+                        pageable
+                )
         );
     }
 
     @GetMapping("/{userId}")
-    public ResponseEntity<UserResponse> getUserById(
+    public ResponseEntity<AdminUserResponse> getUser(
             @PathVariable Long userId
     ) {
 
         return ResponseEntity.ok(
-                adminUserService.getUserById(userId)
+                userService.getAdminUserById(userId)
         );
     }
 
     @PatchMapping("/{userId}/status")
-    public ResponseEntity<UserResponse> updateAccountStatus(
+    public ResponseEntity<AdminUserResponse> updateAccountStatus(
+
             @PathVariable Long userId,
-            @Valid @RequestBody AccountStatusRequest request,
-            Authentication authentication
+
+            @RequestParam boolean enabled
     ) {
 
-        AuthenticatedUser admin =
-                (AuthenticatedUser) authentication.getPrincipal();
-
-        UserResponse response =
-                adminUserService.updateAccountStatus(
+        return ResponseEntity.ok(
+                userService.updateAccountStatus(
                         userId,
-                        request,
-                        admin.getUserId()
-                );
-
-        return ResponseEntity.ok(response);
+                        enabled
+                )
+        );
     }
 }

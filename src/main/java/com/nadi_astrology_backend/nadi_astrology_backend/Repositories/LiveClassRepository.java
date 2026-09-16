@@ -1,4 +1,4 @@
-package com.nadi_astrology_backend.nadi_astrology_backend.Repository;
+package com.nadi_astrology_backend.nadi_astrology_backend.Repositories;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.LiveClassStatus;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.LiveClass;

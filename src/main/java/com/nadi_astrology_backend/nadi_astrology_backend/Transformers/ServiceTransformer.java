@@ -33,8 +33,11 @@ public class ServiceTransformer {
         service.setName(request.getName());
         service.setShortDescription(request.getShortDescription());
         service.setDescription(request.getDescription());
-        service.setImageUrl(request.getImageUrl());
         service.setPrice(request.getPrice());
+
+        if (request.getImageUrl() != null) {
+            service.setImageUrl(request.getImageUrl());
+        }
 
         if (request.getServiceType() != null) {
             service.setServiceType(request.getServiceType());

@@ -117,4 +117,22 @@ public interface CourseEnrollmentRepository
             @Param("status") EnrollmentStatus status
     );
 
+
+    // ============================================================
+// ACTIVE STUDENTS BY COURSE
+// ============================================================
+
+    @Query("""
+        SELECT e
+        FROM CourseEnrollment e
+        JOIN FETCH e.student s
+        JOIN FETCH s.user u
+        WHERE e.course.courseId = :courseId
+        AND e.status = :status
+        """)
+    List<CourseEnrollment> findActiveEnrollmentsByCourseId(
+            @Param("courseId") Long courseId,
+            @Param("status") EnrollmentStatus status
+    );
+
 }

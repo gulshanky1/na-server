@@ -13,7 +13,7 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Models.CourseEnrollment
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.LiveClass;
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.CourseEnrollmentRepository;
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.CourseRepository;
-import com.nadi_astrology_backend.nadi_astrology_backend.Repository.LiveClassRepository;
+import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.LiveClassRepository;
 import com.nadi_astrology_backend.nadi_astrology_backend.Transformers.LiveClassTransformer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -31,20 +31,16 @@ import java.util.Map;
 public class LiveClassService {
 
     private final LiveClassRepository liveClassRepository;
-
     private final CourseRepository courseRepository;
-
     private final CourseEnrollmentRepository courseEnrollmentRepository;
-
     private final LiveClassTransformer liveClassTransformer;
 
-    // =====================================================
-    // ZOOM
-    // =====================================================
-
     private final ZoomConfig zoomConfig;
-
     private final ZoomMeetingService zoomMeetingService;
+
+    private final EmailService emailService;
+    private final NotificationService notificationService;
+
 
 
     // =====================================================
@@ -55,6 +51,7 @@ public class LiveClassService {
     public LiveClassResponse createLiveClass(
             LiveClassRequest request
     ) {
+
 
         // -------------------------------------------------
         // 1. Validate time
@@ -556,6 +553,106 @@ public class LiveClassService {
                 .toList();
     }
 
+    @Transactional
+    public LiveClassResponse startLiveClass(Long liveClassId) {
+
+        LiveClass liveClass = liveClassRepository.findById(liveClassId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Live class not found with id: " + liveClassId
+                        )
+                );
+
+        if (liveClass.getStatus() == LiveClassStatus.LIVE) {
+            throw new BadRequestException("Live class is already started");
+        }
+
+        liveClass.setStatus(LiveClassStatus.LIVE);
+
+        LiveClass savedLiveClass = liveClassRepository.save(liveClass);
+
+        List<CourseEnrollment> enrollments =
+                courseEnrollmentRepository.findActiveEnrollmentsByCourseId(
+                        liveClass.getCourse().getCourseId(),
+                        EnrollmentStatus.ACTIVE
+                );
+
+        for (CourseEnrollment enrollment : enrollments) {
+
+            Long userId = enrollment.getStudent()
+                    .getUser()
+                    .getUserId();
+
+            String email = enrollment.getStudent()
+                    .getUser()
+                    .getEmail();
+
+            String title = "Your live class is starting";
+
+            String message =
+                    "Your live class \"" + liveClass.getTitle() +
+                            "\" is now live. Join the class using the Zoom link.";
+
+            notificationService.createNotification(
+                    userId,
+                    com.nadi_astrology_backend.nadi_astrology_backend.Enum.NotificationType.LIVE_CLASS,
+                    title,
+                    message,
+                    liveClass.getLiveClassId(),
+                    "LIVE_CLASS"
+            );
+
+            String htmlContent = """
+                <html>
+                <body>
+                    <h2>Your Live Class Is Starting</h2>
+
+                    <p>Hello,</p>
+
+                    <p>
+                        Your live class <strong>%s</strong> is now starting.
+                    </p>
+
+                    <p>
+                        <strong>Date:</strong> %s<br>
+                        <strong>Time:</strong> %s - %s
+                    </p>
+
+                    <p>
+                        <a href="%s">
+                            Join Zoom Class
+                        </a>
+                    </p>
+
+                    <p>
+                        <strong>Zoom Password:</strong> %s
+                    </p>
+
+                    <p>
+                        Please join the class on time.
+                    </p>
+                </body>
+                </html>
+                """.formatted(
+                    liveClass.getTitle(),
+                    liveClass.getClassDate(),
+                    liveClass.getStartTime(),
+                    liveClass.getEndTime(),
+                    liveClass.getZoomJoinUrl(),
+                    liveClass.getZoomPassword() != null
+                            ? liveClass.getZoomPassword()
+                            : "No password required"
+            );
+
+            emailService.sendHtmlEmail(
+                    email,
+                    "Your Live Class Is Starting - " + liveClass.getTitle(),
+                    htmlContent
+            );
+        }
+
+        return liveClassTransformer.toResponse(savedLiveClass);
+    }
 
     // =====================================================
     // VALIDATE TIME
