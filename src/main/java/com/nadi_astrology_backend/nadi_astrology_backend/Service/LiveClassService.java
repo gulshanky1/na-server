@@ -1,7 +1,8 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Service;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.Config.ZoomConfig;
-import com.nadi_astrology_backend.nadi_astrology_backend.DTO.LiveClassRequest;
+
+import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.LiveClassRequest;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.LiveClassResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.StudentLiveClassResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.EnrollmentStatus;
@@ -15,6 +16,7 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.CourseEnro
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.CourseRepository;
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.LiveClassRepository;
 import com.nadi_astrology_backend.nadi_astrology_backend.Transformers.LiveClassTransformer;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,7 +51,7 @@ public class LiveClassService {
 
     @Transactional
     public LiveClassResponse createLiveClass(
-            LiveClassRequest request
+            com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.@Valid LiveClassRequest request
     ) {
 
 
@@ -218,7 +220,7 @@ public class LiveClassService {
     @Transactional
     public LiveClassResponse updateLiveClass(
             Long liveClassId,
-            LiveClassRequest request
+            com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.@Valid LiveClassRequest request
     ) {
 
         // -------------------------------------------------

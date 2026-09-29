@@ -4,18 +4,23 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.ProductRequ
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.ProductResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Service.ProductService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/admin/products")
 @RequiredArgsConstructor
+@Validated
 public class AdminProductController {
 
     private final ProductService productService;
-
 
     // ============================================================
     // CREATE
@@ -26,10 +31,8 @@ public class AdminProductController {
             @Valid @RequestBody ProductRequest request
     ) {
 
-        return productService
-                .createProduct(request);
+        return productService.createProduct(request);
     }
-
 
     // ============================================================
     // GET ALL PRODUCTS
@@ -37,13 +40,22 @@ public class AdminProductController {
 
     @GetMapping
     public Page<ProductResponse> getAllProducts(
-            Pageable pageable
+
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "Page cannot be negative")
+            int page,
+
+            @RequestParam(defaultValue = "10")
+            @Min(value = 1, message = "Page size must be at least 1")
+            @Max(value = 50, message = "Page size cannot exceed 50")
+            int size
     ) {
 
-        return productService
-                .getAllProducts(pageable);
-    }
+        Pageable pageable =
+                PageRequest.of(page, size);
 
+        return productService.getAllProducts(pageable);
+    }
 
     // ============================================================
     // GET PRODUCT BY ID
@@ -51,13 +63,14 @@ public class AdminProductController {
 
     @GetMapping("/{productId}")
     public ProductResponse getProductById(
-            @PathVariable Long productId
+
+            @PathVariable
+            @Positive(message = "Product ID must be greater than 0")
+            Long productId
     ) {
 
-        return productService
-                .getProductById(productId);
+        return productService.getProductById(productId);
     }
-
 
     // ============================================================
     // UPDATE
@@ -65,17 +78,19 @@ public class AdminProductController {
 
     @PutMapping("/{productId}")
     public ProductResponse updateProduct(
-            @PathVariable Long productId,
+
+            @PathVariable
+            @Positive(message = "Product ID must be greater than 0")
+            Long productId,
+
             @Valid @RequestBody ProductRequest request
     ) {
 
-        return productService
-                .updateProduct(
-                        productId,
-                        request
-                );
+        return productService.updateProduct(
+                productId,
+                request
+        );
     }
-
 
     // ============================================================
     // DEACTIVATE
@@ -83,13 +98,14 @@ public class AdminProductController {
 
     @DeleteMapping("/{productId}")
     public void deactivateProduct(
-            @PathVariable Long productId
+
+            @PathVariable
+            @Positive(message = "Product ID must be greater than 0")
+            Long productId
     ) {
 
-        productService
-                .deactivateProduct(productId);
+        productService.deactivateProduct(productId);
     }
-
 
     // ============================================================
     // ACTIVATE
@@ -97,10 +113,12 @@ public class AdminProductController {
 
     @PatchMapping("/{productId}/activate")
     public ProductResponse activateProduct(
-            @PathVariable Long productId
+
+            @PathVariable
+            @Positive(message = "Product ID must be greater than 0")
+            Long productId
     ) {
 
-        return productService
-                .activateProduct(productId);
+        return productService.activateProduct(productId);
     }
 }

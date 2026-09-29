@@ -3,6 +3,7 @@ package com.nadi_astrology_backend.nadi_astrology_backend.Service;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.GoogleAuthRequest;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.LoginRequest;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.AuthResponse;
+import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.RefreshTokenResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.UserResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.AuthProvider;
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.Role;
@@ -10,14 +11,18 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Exceptions.Unauthorized
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.User;
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.StudentRepository;
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.UserRepository;
+import com.nadi_astrology_backend.nadi_astrology_backend.Security.GoogleTokenService;
+import com.nadi_astrology_backend.nadi_astrology_backend.Security.GoogleUserInfo;
 import com.nadi_astrology_backend.nadi_astrology_backend.Security.JwtService;
 import com.nadi_astrology_backend.nadi_astrology_backend.Transformers.UserTransformer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.CacheManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -25,15 +30,21 @@ public class AuthService {
 
     private final UserRepository userRepository;
 
+    private final EmailVerificationService emailVerificationService;
+
     private final StudentRepository studentRepository;
 
     private final UserTransformer userTransformer;
 
     private final PasswordEncoder passwordEncoder;
 
+    private final RefreshTokenService refreshTokenService;
+
     private final JwtService jwtService;
 
     private final CacheManager cacheManager;
+
+    private final GoogleTokenService googleTokenService;
 
 
     /*
@@ -41,21 +52,12 @@ public class AuthService {
      * LOGIN
      * ============================================================
      */
-    public AuthResponse login(
-            LoginRequest request
-    ) {
+    public AuthResponse login(LoginRequest request) {
 
-        /*
-         * Normalize email.
-         */
         String email = request.getEmail()
                 .trim()
                 .toLowerCase();
 
-
-        /*
-         * Find User by email.
-         */
         User user =
                 userRepository.findByEmail(email)
                         .orElseThrow(() ->
@@ -64,10 +66,6 @@ public class AuthService {
                                 )
                         );
 
-
-        /*
-         * Check whether account is enabled.
-         */
         if (!user.isAccountEnabled()) {
 
             throw new UnauthorizedException(
@@ -75,10 +73,13 @@ public class AuthService {
             );
         }
 
+        if (!user.isEmailVerified()) {
 
-        /*
-         * Google users don't have a local password.
-         */
+            throw new UnauthorizedException(
+                    "Please verify your email before logging in"
+            );
+        }
+
         if (user.getPassword() == null) {
 
             throw new UnauthorizedException(
@@ -86,10 +87,6 @@ public class AuthService {
             );
         }
 
-
-        /*
-         * Verify password.
-         */
         if (!passwordEncoder.matches(
                 request.getPassword(),
                 user.getPassword()
@@ -100,27 +97,12 @@ public class AuthService {
             );
         }
 
-
-        /*
-         * Update last login time.
-         */
         user.setLastLogin(
                 LocalDateTime.now()
         );
 
-
-        /*
-         * Save updated User.
-         */
         User savedUser =
                 userRepository.save(user);
-
-
-        /*
-         * ========================================================
-         * CACHE INVALIDATION
-         * ========================================================
-         */
 
         var usersCache =
                 cacheManager.getCache("users");
@@ -132,43 +114,37 @@ public class AuthService {
             );
         }
 
-
-        /*
-         * ========================================================
-         * CHECK STUDENT STATUS
-         * ========================================================
-         */
-
         boolean student =
                 studentRepository.existsByUser_UserId(
                         savedUser.getUserId()
                 );
 
-
-        /*
-         * Generate JWT access token.
-         */
         String accessToken =
                 jwtService.generateAccessToken(
                         savedUser
                 );
 
-
         /*
-         * Convert User -> UserResponse.
+         * New refresh-token family for this login session.
          */
+        String tokenFamily =
+                UUID.randomUUID().toString();
+
+        String refreshToken =
+                refreshTokenService.createRefreshToken(
+                        savedUser,
+                        tokenFamily
+                );
+
         UserResponse userResponse =
                 userTransformer.toResponse(
                         savedUser,
                         student
                 );
 
-
-        /*
-         * Return authentication response.
-         */
         return AuthResponse.builder()
                 .accessToken(accessToken)
+                .refreshToken(refreshToken)
                 .tokenType("Bearer")
                 .user(userResponse)
                 .build();
@@ -184,82 +160,60 @@ public class AuthService {
             GoogleAuthRequest request
     ) {
 
-        /*
-         * Validate request.
-         */
-        if (request == null) {
+        if (request == null ||
+                request.getIdToken() == null ||
+                request.getIdToken().isBlank()) {
 
             throw new UnauthorizedException(
-                    "Google authentication data is required"
+                    "Google authentication token is required"
             );
         }
 
+        GoogleUserInfo googleUser =
+                googleTokenService.verify(
+                        request.getIdToken()
+                );
 
-        /*
-         * Validate email.
-         */
-        if (request.getEmail() == null ||
-                request.getEmail().trim().isEmpty()) {
-
-            throw new UnauthorizedException(
-                    "Google email is required"
-            );
-        }
-
-
-        /*
-         * Normalize email.
-         */
         String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+                googleUser.email();
 
-
-        /*
-         * Find existing user.
-         */
         User user =
                 userRepository.findByEmail(email)
                         .orElse(null);
 
-
-        /*
-         * ========================================================
-         * CREATE NEW GOOGLE USER
-         * ========================================================
-         */
         if (user == null) {
 
             user = User.builder()
-                    .fullName(request.getFullName())
+                    .fullName(
+                            googleUser.fullName()
+                    )
                     .email(email)
-                    .providerId(request.getProviderId())
-                    .profileImage(request.getProfileImage())
+                    .providerId(
+                            googleUser.providerId()
+                    )
+                    .profileImage(
+                            googleUser.profileImage()
+                    )
                     .role(Role.USER)
                     .authProvider(AuthProvider.GOOGLE)
                     .emailVerified(true)
                     .accountEnabled(true)
-                    .registeredAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .lastLogin(LocalDateTime.now())
+                    .registeredAt(
+                            LocalDateTime.now()
+                    )
+                    .updatedAt(
+                            LocalDateTime.now()
+                    )
+                    .lastLogin(
+                            LocalDateTime.now()
+                    )
                     .build();
 
             user =
                     userRepository.save(user);
 
-        }
+        } else {
 
-        /*
-         * ========================================================
-         * EXISTING USER
-         * ========================================================
-         */
-        else {
-
-            /*
-             * Check account status.
-             */
             if (!user.isAccountEnabled()) {
 
                 throw new UnauthorizedException(
@@ -267,34 +221,27 @@ public class AuthService {
                 );
             }
 
-
-            /*
-             * Do not automatically convert a LOCAL account
-             * into a Google account.
-             */
-            if (user.getAuthProvider() ==
-                    AuthProvider.LOCAL) {
+            if (user.getAuthProvider()
+                    == AuthProvider.LOCAL) {
 
                 throw new UnauthorizedException(
                         "An account already exists with this email. Please login using email and password."
                 );
             }
 
-
-            /*
-             * Update Google account information.
-             */
             user.setFullName(
-                    request.getFullName()
+                    googleUser.fullName()
             );
 
             user.setProviderId(
-                    request.getProviderId()
+                    googleUser.providerId()
             );
 
             user.setProfileImage(
-                    request.getProfileImage()
+                    googleUser.profileImage()
             );
+
+            user.setEmailVerified(true);
 
             user.setLastLogin(
                     LocalDateTime.now()
@@ -304,20 +251,9 @@ public class AuthService {
                     LocalDateTime.now()
             );
 
-
-            /*
-             * Save updated user.
-             */
             user =
                     userRepository.save(user);
         }
-
-
-        /*
-         * ========================================================
-         * CACHE INVALIDATION
-         * ========================================================
-         */
 
         var usersCache =
                 cacheManager.getCache("users");
@@ -329,36 +265,27 @@ public class AuthService {
             );
         }
 
-
-        /*
-         * ========================================================
-         * CHECK STUDENT STATUS
-         * ========================================================
-         */
-
         boolean student =
                 studentRepository.existsByUser_UserId(
                         user.getUserId()
                 );
-
-
-        /*
-         * ========================================================
-         * GENERATE JWT
-         * ========================================================
-         */
 
         String accessToken =
                 jwtService.generateAccessToken(
                         user
                 );
 
-
         /*
-         * ========================================================
-         * USER RESPONSE
-         * ========================================================
+         * New refresh-token family for this login session.
          */
+        String tokenFamily =
+                UUID.randomUUID().toString();
+
+        String refreshToken =
+                refreshTokenService.createRefreshToken(
+                        user,
+                        tokenFamily
+                );
 
         UserResponse userResponse =
                 userTransformer.toResponse(
@@ -366,17 +293,98 @@ public class AuthService {
                         student
                 );
 
-
-        /*
-         * ========================================================
-         * RETURN AUTH RESPONSE
-         * ========================================================
-         */
-
         return AuthResponse.builder()
                 .accessToken(accessToken)
+                .refreshToken(refreshToken)
                 .tokenType("Bearer")
                 .user(userResponse)
                 .build();
+    }
+
+
+    /*
+     * ============================================================
+     * EMAIL VERIFICATION
+     * ============================================================
+     */
+    public void verifyEmail(String token) {
+
+        emailVerificationService.verifyEmail(
+                token
+        );
+    }
+
+
+    /*
+     * ============================================================
+     * RESEND VERIFICATION EMAIL
+     * ============================================================
+     */
+    public void resendVerificationEmail(
+            String email,
+            String clientIp
+    ) {
+
+        emailVerificationService
+                .resendVerificationEmail(
+                        email,
+                        clientIp
+                );
+    }
+
+
+    /*
+     * ============================================================
+     * REFRESH ACCESS TOKEN
+     * ============================================================
+     */
+    @Transactional
+    public RefreshTokenResponse refreshAccessToken(
+            String rawRefreshToken
+    ) {
+
+        RefreshTokenValidationResult result =
+                refreshTokenService.validateAndRevoke(
+                        rawRefreshToken
+                );
+
+        User user =
+                result.getUser();
+
+        String newAccessToken =
+                jwtService.generateAccessToken(
+                        user
+                );
+
+        /*
+         * Keep the same token family during rotation.
+         */
+        String newRefreshToken =
+                refreshTokenService.createRefreshToken(
+                        user,
+                        result.getTokenFamily()
+                );
+
+        return RefreshTokenResponse.builder()
+                .accessToken(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .tokenType("Bearer")
+                .build();
+    }
+
+
+    /*
+     * ============================================================
+     * LOGOUT
+     * ============================================================
+     */
+    @Transactional
+    public void logout(
+            String rawRefreshToken
+    ) {
+
+        refreshTokenService.revokeToken(
+                rawRefreshToken
+        );
     }
 }

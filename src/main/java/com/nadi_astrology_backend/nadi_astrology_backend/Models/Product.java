@@ -20,8 +20,14 @@ import java.time.LocalDateTime;
                         columnList = "active"
                 ),
                 @Index(
-                        name = "idx_product_reference",
-                        columnList = "referenceId"
+                        name = "idx_product_type_reference",
+                        columnList = "type, referenceId"
+                )
+        },
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_product_type_reference",
+                        columnNames = {"type", "referenceId"}
                 )
         }
 )
@@ -36,7 +42,6 @@ public class Product {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long productId;
 
-
     // ============================================================
     // PRODUCT TYPE
     // ============================================================
@@ -47,7 +52,6 @@ public class Product {
             length = 30
     )
     private ProductType type;
-
 
     // ============================================================
     // REFERENCE TO ACTUAL BUSINESS ENTITY
@@ -61,7 +65,6 @@ public class Product {
      */
     @Column(nullable = false)
     private Long referenceId;
-
 
     // ============================================================
     // PRODUCT INFORMATION
@@ -79,7 +82,6 @@ public class Product {
     @Column(length = 500)
     private String imageUrl;
 
-
     // ============================================================
     // PRICE
     // ============================================================
@@ -91,7 +93,6 @@ public class Product {
     )
     private BigDecimal price;
 
-
     // ============================================================
     // STATUS
     // ============================================================
@@ -99,7 +100,6 @@ public class Product {
     @Column(nullable = false)
     @Builder.Default
     private boolean active = true;
-
 
     // ============================================================
     // TIMESTAMPS
@@ -113,7 +113,6 @@ public class Product {
 
     @Column(nullable = false)
     private LocalDateTime updatedAt;
-
 
     // ============================================================
     // JPA

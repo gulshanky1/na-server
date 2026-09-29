@@ -8,6 +8,8 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.StudentRep
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.UserRepository;
 import com.nadi_astrology_backend.nadi_astrology_backend.Transformers.StudentTransformer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +36,54 @@ public class StudentService {
         return studentTransformer.toResponse(student);
     }
 
+    @Transactional(readOnly = true)
+    public Page<StudentResponse> getAllStudents(
+            String search,
+            Boolean active,
+            Pageable pageable
+    ) {
+
+        return studentRepository
+                .searchStudents(search, active, pageable)
+                .map(studentTransformer::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public StudentResponse getStudentById(Long studentId) {
+
+        Student student =
+                studentRepository.findById(studentId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Student not found"
+                                )
+                        );
+
+        return studentTransformer.toResponse(student);
+    }
+
+    @Transactional
+    public StudentResponse updateStudentStatus(
+            Long studentId,
+            boolean active
+    ) {
+
+        Student student =
+                studentRepository.findById(studentId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Student not found"
+                                )
+                        );
+
+        student.setActive(active);
+
+        Student savedStudent =
+                studentRepository.save(student);
+
+        return studentTransformer.toResponse(savedStudent);
+    }
+
     @Transactional
     public Student createIfNotExists(Long userId) {
 
@@ -51,22 +101,22 @@ public class StudentService {
 
                     Student student = Student.builder()
                             .user(user)
-                            .studentCode(generateStudentCode())
                             .active(true)
                             .build();
 
-                    return studentRepository.save(student);
+                    Student savedStudent =
+                            studentRepository.saveAndFlush(student);
+
+                    savedStudent.setStudentCode(
+                            String.format(
+                                    "STU-%06d",
+                                    savedStudent.getStudentId()
+                            )
+                    );
+
+                    return studentRepository.save(
+                            savedStudent
+                    );
                 });
-    }
-
-    private String generateStudentCode() {
-
-        long nextId =
-                studentRepository.count() + 1;
-
-        return String.format(
-                "STU-%06d",
-                nextId
-        );
     }
 }

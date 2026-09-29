@@ -1,11 +1,13 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Security;
 
+import com.nadi_astrology_backend.nadi_astrology_backend.Models.User;
+import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.UserRepository;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -15,13 +17,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(
@@ -29,53 +32,83 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        log.info("JWT FILTER -> {} {}", request.getMethod(), request.getRequestURI());
-        String authHeader = request.getHeader("Authorization");
 
-        // No Authorization header or wrong format
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        String authHeader =
+                request.getHeader("Authorization");
+
+        if (authHeader == null ||
+                !authHeader.startsWith("Bearer ")) {
 
             filterChain.doFilter(request, response);
             return;
         }
 
-        // Remove "Bearer " from the header
-        String token = authHeader.substring(7);
+        String token =
+                authHeader.substring(7).trim();
+
+        if (token.isBlank()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         try {
 
-            // Extract and verify JWT claims
-            var claims = jwtService.extractClaims(token);
+            Claims claims =
+                    jwtService.extractClaims(token);
 
-            String email = claims.getSubject();
-            Long userId = claims.get("userId", Long.class);
-            String role = claims.get("role", String.class);
+            String email =
+                    claims.getSubject();
 
-            log.info(
-                    "JWT claims -> email: {}, userId: {}, role: {}",
-                    email,
-                    userId,
-                    role
-            );
+            Long userId =
+                    claims.get("userId", Long.class);
 
-            // Make sure required claims exist
-            if (email != null &&
-                    userId != null &&
-                    role != null &&
-                    SecurityContextHolder
-                            .getContext()
-                            .getAuthentication() == null) {
+            if (email == null ||
+                    email.isBlank() ||
+                    userId == null) {
 
-                // Spring Security expects ROLE_ prefix
-                var authority =
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            if (SecurityContextHolder
+                    .getContext()
+                    .getAuthentication() == null) {
+
+                Optional<User> optionalUser =
+                        userRepository.findById(userId);
+
+                if (optionalUser.isEmpty()) {
+
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                User user = optionalUser.get();
+
+                if (!user.isAccountEnabled()) {
+
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                if (!user.getEmail().equalsIgnoreCase(email)) {
+
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                String role =
+                        user.getRole().name();
+
+                SimpleGrantedAuthority authority =
                         new SimpleGrantedAuthority(
                                 "ROLE_" + role
                         );
 
                 AuthenticatedUser authenticatedUser =
                         new AuthenticatedUser(
-                                userId,
-                                email,
+                                user.getUserId(),
+                                user.getEmail(),
                                 role,
                                 List.of(authority)
                         );
@@ -92,32 +125,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                 .buildDetails(request)
                 );
 
-                // Store authenticated user in SecurityContext
                 SecurityContextHolder
                         .getContext()
                         .setAuthentication(authentication);
-
-                log.info(
-                        "JWT authentication successful -> email: {}, userId: {}, role: {}",
-                        email,
-                        userId,
-                        role
-                );
             }
 
-        } catch (Exception e) {
-
-            // JWT is invalid, expired, malformed, or signature is invalid
-            log.error(
-                    "JWT authentication failed: {}",
-                    e.getMessage()
-            );
+        } catch (Exception ignored) {
+            // Invalid/expired JWT.
+            // Leave SecurityContext unauthenticated.
         }
 
-        // Continue request processing
-        log.info("JWT FILTER -> {} {}", request.getMethod(), request.getRequestURI());
         filterChain.doFilter(request, response);
-
-
     }
 }

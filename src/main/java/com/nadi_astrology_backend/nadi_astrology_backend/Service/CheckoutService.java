@@ -37,10 +37,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @org.springframework.stereotype.Service
 @RequiredArgsConstructor
@@ -61,7 +65,9 @@ public class CheckoutService {
     // ============================================================
 
     @Transactional
-    public OrderResponse createCheckout(CheckoutRequest request) {
+    public OrderResponse createCheckout(
+            CheckoutRequest request
+    ) {
 
         // --------------------------------------------------------
         // 1. VALIDATE REQUEST
@@ -82,6 +88,7 @@ public class CheckoutService {
         }
 
         if (request.getCustomerInformation() == null) {
+
             throw new BadRequestException(
                     "Customer information is required"
             );
@@ -97,13 +104,14 @@ public class CheckoutService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
-                                "User not found with id: " + userId
+                                "User not found with id: "
+                                        + userId
                         )
                 );
 
 
         // --------------------------------------------------------
-        // 3. PREVENT DUPLICATE PRODUCT IDs
+        // 3. VALIDATE PRODUCT IDs
         // --------------------------------------------------------
 
         Set<Long> productIds = new HashSet<>();
@@ -112,6 +120,7 @@ public class CheckoutService {
                 request.getItems()) {
 
             if (itemRequest.getProductId() == null) {
+
                 throw new BadRequestException(
                         "Product ID is required"
                 );
@@ -137,17 +146,35 @@ public class CheckoutService {
 
 
         // --------------------------------------------------------
-        // 4. VALIDATE SERVICE-SPECIFIC DETAILS
+        // 4. BATCH LOAD PRODUCTS
+        // --------------------------------------------------------
+
+        Map<Long, Product> products =
+                loadActiveProducts(productIds);
+
+
+        // --------------------------------------------------------
+        // 5. BATCH LOAD SERVICES
+        // --------------------------------------------------------
+
+        Map<Long, Service> services =
+                loadServices(products);
+
+
+        // --------------------------------------------------------
+        // 6. VALIDATE SERVICE-SPECIFIC DETAILS
         // --------------------------------------------------------
 
         validateServiceDetails(
                 request,
-                productIds
+                productIds,
+                products,
+                services
         );
 
 
         // --------------------------------------------------------
-        // 5. CREATE ORDER
+        // 7. CREATE ORDER
         // --------------------------------------------------------
 
         Order order = Order.builder()
@@ -159,71 +186,82 @@ public class CheckoutService {
 
 
         // --------------------------------------------------------
-        // 6. CREATE ORDER ITEMS
+        // 8. CREATE ORDER ITEMS
         // --------------------------------------------------------
 
-        BigDecimal totalAmount = BigDecimal.ZERO;
+        BigDecimal totalAmount =
+                BigDecimal.ZERO;
 
         for (CheckoutItemRequest itemRequest :
                 request.getItems()) {
 
-            Product product = productRepository
-                    .findByProductIdAndActiveTrue(
+            Product product =
+                    products.get(
                             itemRequest.getProductId()
-                    )
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Active product not found with id: "
-                                            + itemRequest.getProductId()
-                            )
                     );
+
+            if (product == null) {
+
+                throw new ResourceNotFoundException(
+                        "Active product not found with id: "
+                                + itemRequest.getProductId()
+                );
+            }
+
 
             // ----------------------------------------------------
             // IMPORTANT:
-            // Price comes from database.
+            // Price always comes from database.
             // Frontend cannot control the price.
             // ----------------------------------------------------
 
-            BigDecimal unitPrice = product.getPrice();
+            BigDecimal unitPrice =
+                    product.getPrice();
 
-            BigDecimal itemTotal = unitPrice.multiply(
-                    BigDecimal.valueOf(
-                            itemRequest.getQuantity()
-                    )
-            );
+            BigDecimal itemTotal =
+                    unitPrice.multiply(
+                            BigDecimal.valueOf(
+                                    itemRequest.getQuantity()
+                            )
+                    );
 
 
-            OrderItem orderItem = OrderItem.builder()
-                    .order(order)
-                    .product(product)
-                    .productName(product.getName())
-                    .unitPrice(unitPrice)
-                    .quantity(itemRequest.getQuantity())
-                    .totalPrice(itemTotal)
-                    .build();
+            OrderItem orderItem =
+                    OrderItem.builder()
+                            .order(order)
+                            .product(product)
+                            .productName(product.getName())
+                            .unitPrice(unitPrice)
+                            .quantity(
+                                    itemRequest.getQuantity()
+                            )
+                            .totalPrice(itemTotal)
+                            .build();
 
             order.getItems().add(orderItem);
 
-            totalAmount = totalAmount.add(itemTotal);
+            totalAmount =
+                    totalAmount.add(itemTotal);
         }
 
 
         // --------------------------------------------------------
-        // 7. SET FINAL ORDER TOTAL
+        // 9. SET FINAL ORDER TOTAL
         // --------------------------------------------------------
 
         order.setTotalAmount(totalAmount);
 
 
         // --------------------------------------------------------
-        // 8. SAVE ORDER
+        // 10. SAVE ORDER
         // --------------------------------------------------------
 
-        Order savedOrder = orderRepository.save(order);
+        Order savedOrder =
+                orderRepository.save(order);
 
 
         // --------------------------------------------------------
-        // 9. SAVE CUSTOMER INFORMATION
+        // 11. SAVE CUSTOMER INFORMATION
         // --------------------------------------------------------
 
         CustomerInformationRequest customerRequest =
@@ -234,9 +272,15 @@ public class CheckoutService {
                         .order(savedOrder)
 
                         // Basic information
-                        .fullName(customerRequest.getFullName())
-                        .email(customerRequest.getEmail())
-                        .phone(customerRequest.getPhone())
+                        .fullName(
+                                customerRequest.getFullName()
+                        )
+                        .email(
+                                customerRequest.getEmail()
+                        )
+                        .phone(
+                                customerRequest.getPhone()
+                        )
 
                         // Astrology information
                         .dateOfBirth(
@@ -286,20 +330,135 @@ public class CheckoutService {
 
 
         // --------------------------------------------------------
-        // 10. SAVE KUNDALI MILAN DETAILS
+        // 12. SAVE KUNDALI MILAN DETAILS
         // --------------------------------------------------------
 
         saveKundaliMilanDetails(
                 savedOrder,
-                request
+                request,
+                products,
+                services
         );
 
 
         // --------------------------------------------------------
-        // 11. RETURN RESPONSE
+        // 13. RETURN RESPONSE
         // --------------------------------------------------------
 
-        return orderTransformer.toResponse(savedOrder);
+        return orderTransformer.toResponse(
+                savedOrder
+        );
+    }
+
+
+    // ============================================================
+    // LOAD ACTIVE PRODUCTS IN BATCH
+    // ============================================================
+
+    private Map<Long, Product> loadActiveProducts(
+            Set<Long> productIds
+    ) {
+
+        if (productIds == null ||
+                productIds.isEmpty()) {
+
+            return Collections.emptyMap();
+        }
+
+        List<Product> products =
+                productRepository
+                        .findAllByProductIdInAndActiveTrue(
+                                productIds
+                        );
+
+
+        Map<Long, Product> productMap =
+                products.stream()
+                        .collect(
+                                Collectors.toMap(
+                                        Product::getProductId,
+                                        Function.identity()
+                                )
+                        );
+
+
+        // --------------------------------------------------------
+        // Ensure every requested product exists
+        // --------------------------------------------------------
+
+        for (Long productId : productIds) {
+
+            if (!productMap.containsKey(productId)) {
+
+                throw new ResourceNotFoundException(
+                        "Active product not found with id: "
+                                + productId
+                );
+            }
+        }
+
+        return productMap;
+    }
+
+
+    // ============================================================
+    // LOAD SERVICES IN BATCH
+    // ============================================================
+
+    private Map<Long, Service> loadServices(
+            Map<Long, Product> products
+    ) {
+
+        Set<Long> serviceIds =
+                products.values()
+                        .stream()
+                        .filter(product ->
+                                product.getType() ==
+                                        ProductType.SERVICE
+                        )
+                        .map(Product::getReferenceId)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(Collectors.toSet());
+
+
+        if (serviceIds.isEmpty()) {
+
+            return Collections.emptyMap();
+        }
+
+
+        List<Service> services =
+                serviceRepository.findAllById(
+                        serviceIds
+                );
+
+
+        Map<Long, Service> serviceMap =
+                services.stream()
+                        .collect(
+                                Collectors.toMap(
+                                        Service::getServiceId,
+                                        Function.identity()
+                                )
+                        );
+
+
+        // --------------------------------------------------------
+        // Ensure every referenced service exists
+        // --------------------------------------------------------
+
+        for (Long serviceId : serviceIds) {
+
+            if (!serviceMap.containsKey(serviceId)) {
+
+                throw new ResourceNotFoundException(
+                        "Service not found with id: "
+                                + serviceId
+                );
+            }
+        }
+
+        return serviceMap;
     }
 
 
@@ -309,7 +468,9 @@ public class CheckoutService {
 
     private void validateServiceDetails(
             CheckoutRequest request,
-            Set<Long> productIds
+            Set<Long> productIds,
+            Map<Long, Product> products,
+            Map<Long, Service> services
     ) {
 
         List<CheckoutServiceDetailsRequest> serviceDetails =
@@ -332,38 +493,45 @@ public class CheckoutService {
 
             for (Long productId : productIds) {
 
-                Product product = productRepository
-                        .findByProductIdAndActiveTrue(productId)
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Active product not found with id: "
-                                                + productId
-                                )
-                        );
+                Product product =
+                        products.get(productId);
+
+                if (product == null) {
+
+                    throw new ResourceNotFoundException(
+                            "Active product not found with id: "
+                                    + productId
+                    );
+                }
 
 
-                if (product.getType() ==
+                if (product.getType() !=
                         ProductType.SERVICE) {
 
-                    Service service = serviceRepository
-                            .findById(
-                                    product.getReferenceId()
-                            )
-                            .orElseThrow(() ->
-                                    new ResourceNotFoundException(
-                                            "Service not found with id: "
-                                                    + product.getReferenceId()
-                                    )
-                            );
+                    continue;
+                }
 
 
-                    if (service.getServiceType() ==
-                            ServiceType.KUNDALI_MILAN) {
-
-                        throw new BadRequestException(
-                                "Kundali Milan details are required"
+                Service service =
+                        services.get(
+                                product.getReferenceId()
                         );
-                    }
+
+                if (service == null) {
+
+                    throw new ResourceNotFoundException(
+                            "Service not found with id: "
+                                    + product.getReferenceId()
+                    );
+                }
+
+
+                if (service.getServiceType() ==
+                        ServiceType.KUNDALI_MILAN) {
+
+                    throw new BadRequestException(
+                            "Kundali Milan details are required"
+                    );
                 }
             }
 
@@ -406,7 +574,7 @@ public class CheckoutService {
 
 
             // ----------------------------------------------------
-            // Prevent duplicate service detail records
+            // Prevent duplicate service details
             // ----------------------------------------------------
 
             if (!serviceDetailProductIds.add(
@@ -420,19 +588,21 @@ public class CheckoutService {
 
 
             // ----------------------------------------------------
-            // Resolve actual Product from database
+            // Resolve Product from batch map
             // ----------------------------------------------------
 
-            Product product = productRepository
-                    .findByProductIdAndActiveTrue(
+            Product product =
+                    products.get(
                             detailRequest.getProductId()
-                    )
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Active product not found with id: "
-                                            + detailRequest.getProductId()
-                            )
                     );
+
+            if (product == null) {
+
+                throw new ResourceNotFoundException(
+                        "Active product not found with id: "
+                                + detailRequest.getProductId()
+                );
+            }
 
 
             // ----------------------------------------------------
@@ -450,19 +620,21 @@ public class CheckoutService {
 
 
             // ----------------------------------------------------
-            // Resolve actual Service
+            // Resolve Service from batch map
             // ----------------------------------------------------
 
-            Service service = serviceRepository
-                    .findById(
+            Service service =
+                    services.get(
                             product.getReferenceId()
-                    )
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Service not found with id: "
-                                            + product.getReferenceId()
-                            )
                     );
+
+            if (service == null) {
+
+                throw new ResourceNotFoundException(
+                        "Service not found with id: "
+                                + product.getReferenceId()
+                );
+            }
 
 
             // ----------------------------------------------------
@@ -503,32 +675,37 @@ public class CheckoutService {
 
         for (Long productId : productIds) {
 
-            Product product = productRepository
-                    .findByProductIdAndActiveTrue(productId)
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Active product not found with id: "
-                                            + productId
-                            )
-                    );
+            Product product =
+                    products.get(productId);
+
+            if (product == null) {
+
+                throw new ResourceNotFoundException(
+                        "Active product not found with id: "
+                                + productId
+                );
+            }
 
 
             if (product.getType() !=
                     ProductType.SERVICE) {
+
                 continue;
             }
 
 
-            Service service = serviceRepository
-                    .findById(
+            Service service =
+                    services.get(
                             product.getReferenceId()
-                    )
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Service not found with id: "
-                                            + product.getReferenceId()
-                            )
                     );
+
+            if (service == null) {
+
+                throw new ResourceNotFoundException(
+                        "Service not found with id: "
+                                + product.getReferenceId()
+                );
+            }
 
 
             if (service.getServiceType() ==
@@ -553,7 +730,9 @@ public class CheckoutService {
 
     private void saveKundaliMilanDetails(
             Order savedOrder,
-            CheckoutRequest request
+            CheckoutRequest request,
+            Map<Long, Product> products,
+            Map<Long, Service> services
     ) {
 
         if (request.getServiceDetails() == null ||
@@ -568,19 +747,21 @@ public class CheckoutService {
 
 
             // ----------------------------------------------------
-            // Find Product
+            // Resolve Product from batch map
             // ----------------------------------------------------
 
-            Product product = productRepository
-                    .findByProductIdAndActiveTrue(
+            Product product =
+                    products.get(
                             detailRequest.getProductId()
-                    )
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Active product not found with id: "
-                                            + detailRequest.getProductId()
-                            )
                     );
+
+            if (product == null) {
+
+                throw new ResourceNotFoundException(
+                        "Active product not found with id: "
+                                + detailRequest.getProductId()
+                );
+            }
 
 
             // ----------------------------------------------------
@@ -595,19 +776,21 @@ public class CheckoutService {
 
 
             // ----------------------------------------------------
-            // Find Service
+            // Resolve Service from batch map
             // ----------------------------------------------------
 
-            Service service = serviceRepository
-                    .findById(
+            Service service =
+                    services.get(
                             product.getReferenceId()
-                    )
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Service not found with id: "
-                                            + product.getReferenceId()
-                            )
                     );
+
+            if (service == null) {
+
+                throw new ResourceNotFoundException(
+                        "Service not found with id: "
+                                + product.getReferenceId()
+                );
+            }
 
 
             // ----------------------------------------------------
@@ -625,23 +808,25 @@ public class CheckoutService {
             // Find matching OrderItem
             // ----------------------------------------------------
 
-            OrderItem orderItem = savedOrder
-                    .getItems()
-                    .stream()
-                    .filter(item ->
-                            item.getProduct()
-                                    .getProductId()
-                                    .equals(
-                                            product.getProductId()
-                                    )
-                    )
-                    .findFirst()
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Order item not found for product: "
-                                            + product.getProductId()
+            OrderItem orderItem =
+                    savedOrder
+                            .getItems()
+                            .stream()
+                            .filter(item ->
+                                    item.getProduct()
+                                            .getProductId()
+                                            .equals(
+                                                    product.getProductId()
+                                            )
                             )
-                    );
+                            .findFirst()
+                            .orElseThrow(() ->
+                                    new ResourceNotFoundException(
+                                            "Order item not found "
+                                                    + "for product: "
+                                                    + product.getProductId()
+                                    )
+                            );
 
 
             // ----------------------------------------------------
@@ -683,7 +868,9 @@ public class CheckoutService {
             // Save
             // ----------------------------------------------------
 
-            kundaliMilanDetailsRepository.save(details);
+            kundaliMilanDetailsRepository.save(
+                    details
+            );
         }
     }
 
@@ -693,16 +880,21 @@ public class CheckoutService {
     // ============================================================
 
     @Transactional(readOnly = true)
-    public OrderResponse getMyOrder(Long orderId) {
+    public OrderResponse getMyOrder(
+            Long orderId
+    ) {
 
-        Long userId = getAuthenticatedUserId();
+        Long userId =
+                getAuthenticatedUserId();
 
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Order not found with id: " + orderId
-                        )
-                );
+        Order order =
+                orderRepository.findById(orderId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Order not found with id: "
+                                                + orderId
+                                )
+                        );
 
 
         // --------------------------------------------------------
@@ -719,7 +911,9 @@ public class CheckoutService {
         }
 
 
-        return orderTransformer.toResponse(order);
+        return orderTransformer.toResponse(
+                order
+        );
     }
 
 
@@ -732,7 +926,8 @@ public class CheckoutService {
             Pageable pageable
     ) {
 
-        Long userId = getAuthenticatedUserId();
+        Long userId =
+                getAuthenticatedUserId();
 
         return orderRepository
                 .findByUser_UserId(
@@ -809,7 +1004,9 @@ public class CheckoutService {
 
         } while (
                 orderRepository
-                        .existsByOrderNumber(orderNumber)
+                        .existsByOrderNumber(
+                                orderNumber
+                        )
         );
 
         return orderNumber;

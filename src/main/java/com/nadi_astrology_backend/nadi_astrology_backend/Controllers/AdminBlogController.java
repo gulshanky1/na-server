@@ -6,6 +6,9 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.BlogRespon
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.BlogStatus;
 import com.nadi_astrology_backend.nadi_astrology_backend.Service.BlogService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -13,16 +16,17 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/admin/blogs")
 @RequiredArgsConstructor
+@Validated
 public class AdminBlogController {
 
     private final BlogService blogService;
-
 
     // =========================================================
     // CREATE BLOG
@@ -61,7 +65,6 @@ public class AdminBlogController {
                 .body(response);
     }
 
-
     // =========================================================
     // GET ALL BLOGS
     // =========================================================
@@ -69,14 +72,13 @@ public class AdminBlogController {
     @GetMapping
     public ResponseEntity<ApiResponse<Page<BlogResponse>>> getAllBlogs(
 
-            @RequestParam(
-                    defaultValue = "0"
-            )
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "Page cannot be negative")
             int page,
 
-            @RequestParam(
-                    defaultValue = "10"
-            )
+            @RequestParam(defaultValue = "10")
+            @Min(value = 1, message = "Page size must be at least 1")
+            @Max(value = 50, message = "Page size cannot exceed 50")
             int size
     ) {
 
@@ -84,9 +86,7 @@ public class AdminBlogController {
                 PageRequest.of(page, size);
 
         Page<BlogResponse> blogs =
-                blogService.getAllBlogs(
-                        pageable
-                );
+                blogService.getAllBlogs(pageable);
 
         ApiResponse<Page<BlogResponse>> response =
                 new ApiResponse<>(
@@ -99,7 +99,6 @@ public class AdminBlogController {
         return ResponseEntity.ok(response);
     }
 
-
     // =========================================================
     // GET BLOG BY ID
     // =========================================================
@@ -107,13 +106,13 @@ public class AdminBlogController {
     @GetMapping("/{blogId}")
     public ResponseEntity<ApiResponse<BlogResponse>> getBlogById(
 
-            @PathVariable Long blogId
+            @PathVariable
+            @Positive(message = "Blog ID must be greater than 0")
+            Long blogId
     ) {
 
         BlogResponse blog =
-                blogService.getBlogById(
-                        blogId
-                );
+                blogService.getBlogById(blogId);
 
         ApiResponse<BlogResponse> response =
                 new ApiResponse<>(
@@ -126,7 +125,6 @@ public class AdminBlogController {
         return ResponseEntity.ok(response);
     }
 
-
     // =========================================================
     // UPDATE BLOG
     // =========================================================
@@ -134,7 +132,9 @@ public class AdminBlogController {
     @PutMapping("/{blogId}")
     public ResponseEntity<ApiResponse<BlogResponse>> updateBlog(
 
-            @PathVariable Long blogId,
+            @PathVariable
+            @Positive(message = "Blog ID must be greater than 0")
+            Long blogId,
 
             @Valid @RequestBody BlogRequest request
     ) {
@@ -156,7 +156,6 @@ public class AdminBlogController {
         return ResponseEntity.ok(response);
     }
 
-
     // =========================================================
     // UPLOAD BLOG IMAGE
     // =========================================================
@@ -167,7 +166,9 @@ public class AdminBlogController {
     )
     public ResponseEntity<ApiResponse<BlogResponse>> uploadImage(
 
-            @PathVariable Long blogId,
+            @PathVariable
+            @Positive(message = "Blog ID must be greater than 0")
+            Long blogId,
 
             @RequestPart("file")
             MultipartFile file
@@ -190,7 +191,6 @@ public class AdminBlogController {
         return ResponseEntity.ok(response);
     }
 
-
     // =========================================================
     // PUBLISH BLOG
     // =========================================================
@@ -198,13 +198,13 @@ public class AdminBlogController {
     @PutMapping("/{blogId}/publish")
     public ResponseEntity<ApiResponse<BlogResponse>> publishBlog(
 
-            @PathVariable Long blogId
+            @PathVariable
+            @Positive(message = "Blog ID must be greater than 0")
+            Long blogId
     ) {
 
         BlogResponse blog =
-                blogService.publishBlog(
-                        blogId
-                );
+                blogService.publishBlog(blogId);
 
         ApiResponse<BlogResponse> response =
                 new ApiResponse<>(
@@ -217,7 +217,6 @@ public class AdminBlogController {
         return ResponseEntity.ok(response);
     }
 
-
     // =========================================================
     // ARCHIVE BLOG
     // =========================================================
@@ -225,13 +224,13 @@ public class AdminBlogController {
     @PutMapping("/{blogId}/archive")
     public ResponseEntity<ApiResponse<BlogResponse>> archiveBlog(
 
-            @PathVariable Long blogId
+            @PathVariable
+            @Positive(message = "Blog ID must be greater than 0")
+            Long blogId
     ) {
 
         BlogResponse blog =
-                blogService.archiveBlog(
-                        blogId
-                );
+                blogService.archiveBlog(blogId);
 
         ApiResponse<BlogResponse> response =
                 new ApiResponse<>(
@@ -244,7 +243,6 @@ public class AdminBlogController {
         return ResponseEntity.ok(response);
     }
 
-
     // =========================================================
     // DELETE BLOG
     // =========================================================
@@ -252,12 +250,12 @@ public class AdminBlogController {
     @DeleteMapping("/{blogId}")
     public ResponseEntity<ApiResponse<Void>> deleteBlog(
 
-            @PathVariable Long blogId
+            @PathVariable
+            @Positive(message = "Blog ID must be greater than 0")
+            Long blogId
     ) {
 
-        blogService.deleteBlog(
-                blogId
-        );
+        blogService.deleteBlog(blogId);
 
         ApiResponse<Void> response =
                 new ApiResponse<>(
@@ -270,7 +268,6 @@ public class AdminBlogController {
         return ResponseEntity.ok(response);
     }
 
-
     // =========================================================
     // FILTER BLOGS BY STATUS
     // =========================================================
@@ -280,14 +277,13 @@ public class AdminBlogController {
 
             @PathVariable BlogStatus status,
 
-            @RequestParam(
-                    defaultValue = "0"
-            )
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "Page cannot be negative")
             int page,
 
-            @RequestParam(
-                    defaultValue = "10"
-            )
+            @RequestParam(defaultValue = "10")
+            @Min(value = 1, message = "Page size must be at least 1")
+            @Max(value = 50, message = "Page size cannot exceed 50")
             int size
     ) {
 

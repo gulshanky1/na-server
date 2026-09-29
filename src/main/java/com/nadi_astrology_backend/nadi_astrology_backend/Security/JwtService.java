@@ -19,39 +19,118 @@ public class JwtService {
 
     public JwtService(
             @Value("${jwt.secret}") String secret,
-            @Value("${jwt.access-token-expiration}") long accessTokenExpiration) {
+            @Value("${jwt.access-token-expiration}") long accessTokenExpiration
+    ) {
 
-        this.secretKey = Keys.hmacShaKeyFor(
-                secret.getBytes(StandardCharsets.UTF_8)
-        );
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalArgumentException(
+                    "JWT secret must not be empty"
+            );
+        }
 
-        this.accessTokenExpiration = accessTokenExpiration;
+        if (secret.length() < 32) {
+            throw new IllegalArgumentException(
+                    "JWT secret must contain at least 32 characters"
+            );
+        }
+
+        this.secretKey =
+                Keys.hmacShaKeyFor(
+                        secret.getBytes(StandardCharsets.UTF_8)
+                );
+
+        if (accessTokenExpiration <= 0) {
+            throw new IllegalArgumentException(
+                    "JWT access token expiration must be greater than 0"
+            );
+        }
+
+        this.accessTokenExpiration =
+                accessTokenExpiration;
     }
+
+    // ============================================================
+    // GENERATE ACCESS TOKEN
+    // ============================================================
 
     public String generateAccessToken(User user) {
 
+        if (user == null) {
+            throw new IllegalArgumentException(
+                    "User cannot be null"
+            );
+        }
+
+        if (user.getUserId() == null) {
+            throw new IllegalArgumentException(
+                    "User ID cannot be null"
+            );
+        }
+
+        if (user.getEmail() == null ||
+                user.getEmail().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "User email cannot be null or empty"
+            );
+        }
+
         Date now = new Date();
 
-        Date expiration = new Date(
-                now.getTime() + accessTokenExpiration
-        );
+        Date expiration =
+                new Date(
+                        now.getTime()
+                                + accessTokenExpiration
+                );
 
         return Jwts.builder()
                 .subject(user.getEmail())
                 .claim("userId", user.getUserId())
-                .claim("role", user.getRole().name())
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(secretKey)
                 .compact();
     }
 
+    // ============================================================
+    // EXTRACT & VALIDATE CLAIMS
+    // ============================================================
+
     public Claims extractClaims(String token) {
+
+        if (token == null ||
+                token.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "JWT token cannot be empty"
+            );
+        }
 
         return Jwts.parser()
                 .verifyWith(secretKey)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    // ============================================================
+    // VALIDATE TOKEN
+    // ============================================================
+
+    public boolean isTokenValid(String token) {
+
+        try {
+
+            Claims claims =
+                    extractClaims(token);
+
+            return claims.getSubject() != null
+                    && !claims.getSubject().isBlank()
+                    && claims.get("userId") != null;
+
+        } catch (Exception exception) {
+
+            return false;
+        }
     }
 }

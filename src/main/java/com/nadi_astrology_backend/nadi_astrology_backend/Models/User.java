@@ -11,9 +11,30 @@ import java.time.LocalDateTime;
 @Table(
         name = "users",
         indexes = {
-                @Index(name = "idx_user_email", columnList = "email"),
-                @Index(name = "idx_user_phone", columnList = "phone"),
-                @Index(name = "idx_user_provider_id", columnList = "providerId")
+                @Index(
+                        name = "idx_user_email",
+                        columnList = "email"
+                ),
+                @Index(
+                        name = "idx_user_phone",
+                        columnList = "phone"
+                ),
+                @Index(
+                        name = "idx_user_provider_id",
+                        columnList = "providerId"
+                ),
+                @Index(
+                        name = "idx_user_role",
+                        columnList = "role"
+                ),
+                @Index(
+                        name = "idx_user_email_verified",
+                        columnList = "emailVerified"
+                ),
+                @Index(
+                        name = "idx_user_account_enabled",
+                        columnList = "accountEnabled"
+                )
         }
 )
 @Getter
@@ -36,13 +57,23 @@ public class User {
     // BASIC USER INFORMATION
     // =========================================================
 
-    @Column(nullable = false, length = 100)
+    @Column(
+            nullable = false,
+            length = 100
+    )
     private String fullName;
 
-    @Column(nullable = false, unique = true, length = 100)
+    @Column(
+            nullable = false,
+            unique = true,
+            length = 100
+    )
     private String email;
 
-    @Column(unique = true, length = 15)
+    @Column(
+            unique = true,
+            length = 15
+    )
     private String phone;
 
 
@@ -54,9 +85,12 @@ public class User {
      * Nullable because Google users don't have
      * a local password.
      *
-     * Store only encoded passwords.
+     * Only BCrypt encoded passwords should be stored.
      */
-    @Column
+    @Column(
+            nullable = true,
+            length = 255
+    )
     private String password;
 
 
@@ -68,7 +102,10 @@ public class User {
      * admin operation.
      */
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(
+            nullable = false,
+            length = 30
+    )
     @Builder.Default
     private Role role = Role.USER;
 
@@ -80,7 +117,10 @@ public class User {
      * GOOGLE -> Google OAuth
      */
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(
+            nullable = false,
+            length = 30
+    )
     @Builder.Default
     private AuthProvider authProvider = AuthProvider.LOCAL;
 
@@ -91,7 +131,10 @@ public class User {
      * Google users -> Google's unique user ID
      * Local users  -> null
      */
-    @Column(unique = true, length = 255)
+    @Column(
+            unique = true,
+            length = 255
+    )
     private String providerId;
 
 
@@ -129,7 +172,10 @@ public class User {
     /**
      * Account creation time.
      */
-    @Column(nullable = false, updatable = false)
+    @Column(
+            nullable = false,
+            updatable = false
+    )
     private LocalDateTime registeredAt;
 
 
@@ -143,6 +189,7 @@ public class User {
     /**
      * Last successful login.
      */
+    @Column
     private LocalDateTime lastLogin;
 
 
@@ -159,7 +206,9 @@ public class User {
             registeredAt = now;
         }
 
-        updatedAt = now;
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
     }
 
 

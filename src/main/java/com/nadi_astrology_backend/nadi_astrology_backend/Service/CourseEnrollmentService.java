@@ -64,6 +64,7 @@ public class CourseEnrollmentService {
         // --------------------------------------------------------
 
         if (!course.isActive()) {
+
             throw new BadRequestException(
                     "Course is not active"
             );
@@ -90,6 +91,7 @@ public class CourseEnrollmentService {
                 order.getUser() == null ||
                         !order.getUser().getUserId().equals(userId)
         ) {
+
             throw new BadRequestException(
                     "You are not allowed to use this order"
             );
@@ -101,6 +103,7 @@ public class CourseEnrollmentService {
         // --------------------------------------------------------
 
         if (order.getStatus() != OrderStatus.PAID) {
+
             throw new BadRequestException(
                     "Course cannot be enrolled because order is not paid"
             );
@@ -108,7 +111,7 @@ public class CourseEnrollmentService {
 
 
         // --------------------------------------------------------
-        // 6. Verify order actually contains this course
+        // 6. Verify order contains this course
         // --------------------------------------------------------
 
         OrderItem orderItem =
@@ -131,6 +134,7 @@ public class CourseEnrollmentService {
                 orderItem.getQuantity() == null ||
                         orderItem.getQuantity() <= 0
         ) {
+
             throw new BadRequestException(
                     "Invalid course quantity in order"
             );
@@ -150,7 +154,7 @@ public class CourseEnrollmentService {
         // --------------------------------------------------------
 
         return enrollmentRepository
-                .findByStudent_StudentIdAndCourse_CourseId(
+                .findForUpdate(
                         student.getStudentId(),
                         courseId
                 )

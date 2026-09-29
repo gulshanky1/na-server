@@ -19,7 +19,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-
 @Service
 @RequiredArgsConstructor
 public class PaymentService {
@@ -57,18 +56,28 @@ public class PaymentService {
 
 
         // ========================================================
-        // FIND PAYMENT
+        // FIND PAYMENT WITH DATABASE LOCK
         // ========================================================
 
         /*
-         * Find our payment using Razorpay Order ID.
-         *
          * IMPORTANT:
-         * This is only used to locate our database record.
+         *
+         * PESSIMISTIC WRITE LOCK prevents two simultaneous
+         * requests from processing the same payment record.
+         *
+         * Example:
+         *
+         * Request A -> locks payment row
+         * Request B -> waits
+         * Request A -> verifies + fulfills + commits
+         * Request B -> continues after A finishes
+         *
+         * This prevents duplicate payment processing.
          */
+
         Payment payment =
                 paymentRepository
-                        .findByRazorpayOrderId(
+                        .findByRazorpayOrderIdForUpdate(
                                 request.getRazorpayOrderId()
                         )
                         .orElseThrow(() ->
@@ -86,10 +95,6 @@ public class PaymentService {
         // VERIFY OWNERSHIP
         // ========================================================
 
-        /*
-         * Make sure this order belongs to
-         * the currently authenticated user.
-         */
         if (!order.getUser().getUserId().equals(userId)) {
 
             throw new BadRequestException(
@@ -103,14 +108,10 @@ public class PaymentService {
         // ========================================================
 
         /*
-         * If payment was already successfully verified,
-         * run fulfillment again safely.
-         *
-         * PaymentFulfillmentService is idempotent.
-         *
-         * This is also useful for older successful payments
-         * that were verified before fulfillment was implemented.
+         * Because the payment row is locked, another concurrent
+         * request cannot enter this section at the same time.
          */
+
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
 
             paymentFulfillmentService.fulfillSuccessfulPayment(
@@ -129,20 +130,17 @@ public class PaymentService {
         // ========================================================
 
         /*
-         * IMPORTANT SECURITY RULE:
+         * Never trust the Razorpay order ID supplied by the
+         * frontend for signature generation.
          *
-         * Do NOT trust the Razorpay order ID
-         * sent by the frontend for signature generation.
-         *
-         * Use the Razorpay order ID stored in our database.
+         * Use the order ID stored in our database.
          */
+
         String serverRazorpayOrderId =
                 payment.getRazorpayOrderId();
 
-
         String razorpayPaymentId =
                 request.getRazorpayPaymentId();
-
 
         String razorpaySignature =
                 request.getRazorpaySignature();
@@ -159,24 +157,20 @@ public class PaymentService {
             JSONObject attributes =
                     new JSONObject();
 
-
             attributes.put(
                     "razorpay_order_id",
                     serverRazorpayOrderId
             );
-
 
             attributes.put(
                     "razorpay_payment_id",
                     razorpayPaymentId
             );
 
-
             attributes.put(
                     "razorpay_signature",
                     razorpaySignature
             );
-
 
             signatureValid =
                     Utils.verifyPaymentSignature(
@@ -202,19 +196,15 @@ public class PaymentService {
                     PaymentStatus.FAILED
             );
 
-
             payment.setErrorCode(
                     "INVALID_SIGNATURE"
             );
-
 
             payment.setErrorDescription(
                     "Razorpay payment signature verification failed"
             );
 
-
             paymentRepository.save(payment);
-
 
             throw new BadRequestException(
                     "Invalid Razorpay payment signature"
@@ -227,9 +217,10 @@ public class PaymentService {
         // ========================================================
 
         /*
-         * Prevent the same Razorpay Payment ID
-         * from being attached to another payment.
+         * Prevent the same Razorpay payment ID from being
+         * attached to another payment.
          */
+
         paymentRepository
                 .findByRazorpayPaymentId(
                         razorpayPaymentId
@@ -255,21 +246,17 @@ public class PaymentService {
                 razorpayPaymentId
         );
 
-
         payment.setRazorpaySignature(
                 razorpaySignature
         );
-
 
         payment.setStatus(
                 PaymentStatus.SUCCESS
         );
 
-
         payment.setErrorCode(null);
 
         payment.setErrorDescription(null);
-
 
         paymentRepository.save(payment);
 
@@ -278,20 +265,9 @@ public class PaymentService {
         // UPDATE ORDER
         // ========================================================
 
-        /*
-         * Payment is successfully verified,
-         * therefore our internal order becomes PAID.
-         */
         order.setStatus(
                 OrderStatus.PAID
         );
-
-
-        /*
-         * Order is already attached to Payment,
-         * so JPA will persist the status change
-         * inside this transaction.
-         */
 
 
         // ========================================================
@@ -314,6 +290,7 @@ public class PaymentService {
          * PHONE CONSULTATION:
          *     Will be implemented later
          */
+
         paymentFulfillmentService.fulfillSuccessfulPayment(
                 payment
         );
@@ -341,7 +318,6 @@ public class PaymentService {
 
         Order order =
                 payment.getOrder();
-
 
         return PaymentVerifyResponse.builder()
 
@@ -400,7 +376,6 @@ public class PaymentService {
                         .getContext()
                         .getAuthentication();
 
-
         if (authentication == null
                 || !authentication.isAuthenticated()) {
 
@@ -409,10 +384,8 @@ public class PaymentService {
             );
         }
 
-
         Object principal =
                 authentication.getPrincipal();
-
 
         if (!(principal
                 instanceof AuthenticatedUser authenticatedUser)) {
@@ -421,7 +394,6 @@ public class PaymentService {
                     "Invalid authenticated user"
             );
         }
-
 
         return authenticatedUser.getUserId();
     }

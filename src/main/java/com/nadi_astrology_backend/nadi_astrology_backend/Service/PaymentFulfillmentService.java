@@ -2,11 +2,15 @@ package com.nadi_astrology_backend.nadi_astrology_backend.Service;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.NotificationType;
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.ProductType;
+import com.nadi_astrology_backend.nadi_astrology_backend.Exceptions.BadRequestException;
+import com.nadi_astrology_backend.nadi_astrology_backend.Exceptions.ResourceNotFoundException;
+import com.nadi_astrology_backend.nadi_astrology_backend.Models.Book;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.Order;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.OrderItem;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.Payment;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.Product;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.User;
+import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.BookRepository;
 import com.nadi_astrology_backend.nadi_astrology_backend.Repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +25,7 @@ public class PaymentFulfillmentService {
     private final PaymentEmailService paymentEmailService;
     private final NotificationService notificationService;
     private final UserRepository userRepository;
+    private final BookRepository bookRepository;
     private final ServiceFulfillmentService serviceFulfillmentService;
 
     @Value("${app.admin.email}")
@@ -31,23 +36,6 @@ public class PaymentFulfillmentService {
 
         if (payment == null) {
             throw new IllegalArgumentException("Payment is required");
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * IDEMPOTENCY CHECK
-         * ---------------------------------------------------------
-         *
-         * If this payment has already been fulfilled,
-         * do nothing.
-         *
-         * This prevents duplicate:
-         * - enrollments
-         * - notifications
-         * - emails
-         */
-        if (payment.isFulfillmentCompleted()) {
-            return;
         }
 
         Order order = payment.getOrder();
@@ -64,6 +52,31 @@ public class PaymentFulfillmentService {
 
         Long userId = customer.getUserId();
 
+        /*
+         * ---------------------------------------------------------
+         * IDEMPOTENCY CHECK
+         * ---------------------------------------------------------
+         *
+         * If payment fulfillment was already completed,
+         * we only check SERVICE items.
+         *
+         * This allows older successful payments to receive
+         * their missing ServiceFulfillment records.
+         *
+         * We do NOT repeat:
+         * - course enrollment
+         * - book stock reduction
+         * - payment notification
+         * - admin notification
+         * - customer email
+         * - admin email
+         */
+        if (payment.isFulfillmentCompleted()) {
+
+            createMissingServiceFulfillments(order);
+
+            return;
+        }
 
         /*
          * ---------------------------------------------------------
@@ -102,26 +115,82 @@ public class PaymentFulfillmentService {
             } else if (product.getType() == ProductType.BOOK) {
 
                 /*
-                 * Book fulfillment will be implemented later.
+                 * -------------------------------------------------
+                 * BOOK STOCK FULFILLMENT
+                 * -------------------------------------------------
+                 *
+                 * PESSIMISTIC_WRITE lock prevents two concurrent
+                 * payments from modifying the same book stock at
+                 * the same time.
                  */
+
+                Long bookId = product.getReferenceId();
+
+                Book book = bookRepository
+                        .findByIdForUpdate(bookId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Book not found with id: " + bookId
+                                )
+                        );
+
+                Integer quantity = item.getQuantity();
+
+                if (quantity == null || quantity <= 0) {
+                    throw new BadRequestException(
+                            "Invalid book quantity"
+                    );
+                }
+
+                if (!book.isActive()) {
+                    throw new BadRequestException(
+                            "Book is no longer available"
+                    );
+                }
+
+                if (book.getStockQuantity() == null) {
+                    throw new BadRequestException(
+                            "Book stock is not configured"
+                    );
+                }
+
+                if (book.getStockQuantity() < quantity) {
+                    throw new BadRequestException(
+                            "Insufficient stock for book: "
+                                    + book.getTitle()
+                    );
+                }
+
+                book.setStockQuantity(
+                        book.getStockQuantity() - quantity
+                );
+
+                bookRepository.save(book);
 
             } else if (product.getType() == ProductType.SERVICE) {
 
                 /*
-                 * Create generic service fulfillment.
+                 * Create service fulfillment.
+                 *
+                 * This automatically supports:
+                 *
+                 * STANDARD
+                 * KUNDALI_MILAN
+                 *
+                 * ServiceFulfillmentService gets the actual
+                 * ServiceType from the purchased Service.
                  */
                 serviceFulfillmentService.createFulfillment(
                         item.getOrderItemId()
                 );
 
-            } else if (product.getType() == ProductType.PHONE_CONSULTATION) {
+            } else if(product.getType() == ProductType.PHONE_CONSULTATION) {
 
                 /*
                  * Consultation fulfillment will be implemented later.
                  */
             }
         }
-
 
         /*
          * ---------------------------------------------------------
@@ -139,7 +208,6 @@ public class PaymentFulfillmentService {
                 order.getOrderId(),
                 "ORDER"
         );
-
 
         /*
          * ---------------------------------------------------------
@@ -164,7 +232,6 @@ public class PaymentFulfillmentService {
                     );
                 });
 
-
         /*
          * ---------------------------------------------------------
          * 4. CUSTOMER EMAIL
@@ -186,7 +253,6 @@ public class PaymentFulfillmentService {
 
             e.printStackTrace();
         }
-
 
         /*
          * ---------------------------------------------------------
@@ -210,17 +276,50 @@ public class PaymentFulfillmentService {
             e.printStackTrace();
         }
 
-
         /*
          * ---------------------------------------------------------
          * 6. MARK FULFILLMENT AS COMPLETED
          * ---------------------------------------------------------
-         *
-         * This is done only after all critical database
-         * fulfillment operations have succeeded.
-         *
-         * Email failures are already caught above.
          */
+
         payment.setFulfillmentCompleted(true);
+    }
+
+    /*
+     * -------------------------------------------------------------
+     * CREATE MISSING SERVICE FULFILLMENTS
+     * -------------------------------------------------------------
+     *
+     * Used for payments that were already marked as fulfilled
+     * before ServiceFulfillment was implemented.
+     *
+     * createFulfillment() is idempotent, so calling it again for
+     * an existing fulfillment is safe.
+     */
+    private void createMissingServiceFulfillments(Order order) {
+
+        if (order.getItems() == null) {
+            return;
+        }
+
+        for (OrderItem item : order.getItems()) {
+
+            if (item == null) {
+                continue;
+            }
+
+            Product product = item.getProduct();
+
+            if (product == null) {
+                continue;
+            }
+
+            if (product.getType() == ProductType.SERVICE) {
+
+                serviceFulfillmentService.createFulfillment(
+                        item.getOrderItemId()
+                );
+            }
+        }
     }
 }

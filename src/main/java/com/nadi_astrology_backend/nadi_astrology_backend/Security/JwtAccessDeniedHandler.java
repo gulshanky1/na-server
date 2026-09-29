@@ -31,7 +31,7 @@ public class JwtAccessDeniedHandler implements AccessDeniedHandler {
 
         ApiErrorResponse errorResponse =
                 ApiErrorResponse.builder()
-                        .success(false)
+                        .error(false)
                         .message("Access denied")
                         .status(HttpServletResponse.SC_FORBIDDEN)
                         .timestamp(LocalDateTime.now())

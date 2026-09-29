@@ -2,6 +2,7 @@ package com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
@@ -30,6 +31,7 @@ public class KundaliMilanDetailsRequest {
     private LocalDate boyDateOfBirth;
 
     @NotNull(message = "Boy birth time is required")
+    @Past(message = "Boy date of birth must be in the past")
     private LocalTime boyBirthTime;
 
     @NotBlank(message = "Boy birth place is required")
@@ -52,6 +54,7 @@ public class KundaliMilanDetailsRequest {
     private String girlName;
 
     @NotNull(message = "Girl date of birth is required")
+    @Past(message = "Girl date of birth must be in the past")
     private LocalDate girlDateOfBirth;
 
     @NotNull(message = "Girl birth time is required")

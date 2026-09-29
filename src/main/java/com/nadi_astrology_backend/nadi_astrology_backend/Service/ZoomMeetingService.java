@@ -2,6 +2,7 @@ package com.nadi_astrology_backend.nadi_astrology_backend.Service;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.Config.ZoomConfig;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -23,7 +24,7 @@ public class ZoomMeetingService {
     // CREATE ZOOM MEETING
     // =====================================================
 
-    public Map createMeeting(
+    public Map<String, Object> createMeeting(
             String hostUserId,
             String topic,
             String description,
@@ -70,7 +71,11 @@ public class ZoomMeetingService {
                 )
                 .body(requestBody)
                 .retrieve()
-                .body(Map.class);
+                .body(
+                        new ParameterizedTypeReference<
+                                Map<String, Object>
+                                >() {}
+                );
     }
 
 

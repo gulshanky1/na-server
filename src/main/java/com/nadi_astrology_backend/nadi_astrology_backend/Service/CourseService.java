@@ -1,9 +1,9 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Service;
 
-
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.CourseRequest;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.CourseResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.ProductType;
+import com.nadi_astrology_backend.nadi_astrology_backend.Exceptions.BadRequestException;
 import com.nadi_astrology_backend.nadi_astrology_backend.Exceptions.DuplicateResourceException;
 import com.nadi_astrology_backend.nadi_astrology_backend.Exceptions.ResourceNotFoundException;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.Course;
@@ -25,6 +25,7 @@ public class CourseService {
     private final ProductSyncService productSyncService;
     private final CloudinaryService cloudinaryService;
 
+    private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
     // =========================================================
     // CREATE COURSE
@@ -45,7 +46,6 @@ public class CourseService {
 
         Course savedCourse = courseRepository.save(course);
 
-        // Automatically create Product for this Course
         productSyncService.createOrUpdateProduct(
                 ProductType.COURSE,
                 savedCourse.getCourseId(),
@@ -58,7 +58,6 @@ public class CourseService {
 
         return courseTransformer.toResponse(savedCourse);
     }
-
 
     // =========================================================
     // GET COURSE BY ID - PUBLIC
@@ -77,7 +76,6 @@ public class CourseService {
         return courseTransformer.toResponse(course);
     }
 
-
     // =========================================================
     // GET ACTIVE COURSES - PUBLIC
     // =========================================================
@@ -92,7 +90,6 @@ public class CourseService {
                 .map(courseTransformer::toResponse);
     }
 
-
     // =========================================================
     // GET ALL COURSES - ADMIN
     // =========================================================
@@ -106,7 +103,6 @@ public class CourseService {
                 .findAll(pageable)
                 .map(courseTransformer::toResponse);
     }
-
 
     // =========================================================
     // UPDATE COURSE - ADMIN
@@ -139,7 +135,6 @@ public class CourseService {
 
         Course savedCourse = courseRepository.save(course);
 
-        // Keep Product synchronized
         productSyncService.createOrUpdateProduct(
                 ProductType.COURSE,
                 savedCourse.getCourseId(),
@@ -152,7 +147,6 @@ public class CourseService {
 
         return courseTransformer.toResponse(savedCourse);
     }
-
 
     // =========================================================
     // DEACTIVATE COURSE - ADMIN
@@ -172,7 +166,6 @@ public class CourseService {
 
         Course savedCourse = courseRepository.save(course);
 
-        // Deactivate corresponding Product
         productSyncService.deactivateProduct(
                 ProductType.COURSE,
                 courseId
@@ -180,7 +173,6 @@ public class CourseService {
 
         return courseTransformer.toResponse(savedCourse);
     }
-
 
     // =========================================================
     // UPLOAD COURSE IMAGE - ADMIN
@@ -199,15 +191,16 @@ public class CourseService {
                         )
                 );
 
-        // Upload image to Cloudinary
-        String imageUrl = cloudinaryService.uploadImage(file);
+        validateImage(file);
 
-        // Save Cloudinary URL in Course
+        String imageUrl =
+                cloudinaryService.uploadImage(file);
+
         course.setImageUrl(imageUrl);
 
-        Course savedCourse = courseRepository.save(course);
+        Course savedCourse =
+                courseRepository.save(course);
 
-        // Synchronize Product image
         productSyncService.createOrUpdateProduct(
                 ProductType.COURSE,
                 savedCourse.getCourseId(),
@@ -219,5 +212,49 @@ public class CourseService {
         );
 
         return courseTransformer.toResponse(savedCourse);
+    }
+
+    // =========================================================
+    // IMAGE VALIDATION
+    // =========================================================
+
+    private void validateImage(MultipartFile file) {
+
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException(
+                    "Image file is required"
+            );
+        }
+
+        if (file.getSize() > MAX_IMAGE_SIZE) {
+            throw new BadRequestException(
+                    "Image size cannot exceed 5 MB"
+            );
+        }
+
+        String contentType = file.getContentType();
+
+        if (contentType == null ||
+                !(contentType.equalsIgnoreCase("image/jpeg")
+                        || contentType.equalsIgnoreCase("image/png")
+                        || contentType.equalsIgnoreCase("image/webp"))) {
+
+            throw new BadRequestException(
+                    "Only JPG, PNG and WEBP images are allowed"
+            );
+        }
+
+        String filename = file.getOriginalFilename();
+
+        if (filename == null ||
+                filename.isBlank() ||
+                filename.contains("..") ||
+                filename.contains("/")
+                || filename.contains("\\")) {
+
+            throw new BadRequestException(
+                    "Invalid image filename"
+            );
+        }
     }
 }

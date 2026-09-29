@@ -21,6 +21,10 @@ import java.time.LocalDateTime;
                 @Index(
                         name = "idx_notification_created_at",
                         columnList = "created_at"
+                ),
+                @Index(
+                        name = "idx_notification_user_read_created",
+                        columnList = "user_id, is_read, created_at"
                 )
         }
 )
@@ -35,7 +39,6 @@ public class Notification {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long notificationId;
 
-
     // =====================================================
     // USER
     // =====================================================
@@ -46,7 +49,6 @@ public class Notification {
             nullable = false
     )
     private User user;
-
 
     // =====================================================
     // NOTIFICATION DETAILS
@@ -59,13 +61,11 @@ public class Notification {
     )
     private NotificationType type;
 
-
     @Column(
             nullable = false,
             length = 200
     )
     private String title;
-
 
     @Column(
             nullable = false,
@@ -73,23 +73,18 @@ public class Notification {
     )
     private String message;
 
-
     // =====================================================
     // OPTIONAL REFERENCE
     // =====================================================
 
-    @Column(
-            name = "reference_id"
-    )
+    @Column(name = "reference_id")
     private Long referenceId;
-
 
     @Column(
             name = "reference_type",
             length = 50
     )
     private String referenceType;
-
 
     // =====================================================
     // STATUS
@@ -102,9 +97,8 @@ public class Notification {
     )
     private boolean read = false;
 
-
     // =====================================================
-    // TIMESTAMPS
+    // TIMESTAMP
     // =====================================================
 
     @Column(
@@ -112,7 +106,6 @@ public class Notification {
             nullable = false
     )
     private LocalDateTime createdAt;
-
 
     @PrePersist
     protected void onCreate() {

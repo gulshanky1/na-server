@@ -112,9 +112,9 @@ public class BlogTransformer {
                 request.getContent()
         );
 
-        blog.setImageUrl(
-                request.getImageUrl()
-        );
+        if (request.getImageUrl() != null) {
+            blog.setImageUrl(request.getImageUrl());
+        }
 
         blog.setAuthor(
                 request.getAuthor()

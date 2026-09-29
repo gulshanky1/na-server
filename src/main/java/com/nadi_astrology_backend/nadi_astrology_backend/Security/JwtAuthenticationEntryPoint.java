@@ -32,7 +32,7 @@ public class JwtAuthenticationEntryPoint
 
         ApiErrorResponse errorResponse =
                 ApiErrorResponse.builder()
-                        .success(false)
+                        .error(false)
                         .message("Authentication required")
                         .status(HttpServletResponse.SC_UNAUTHORIZED)
                         .timestamp(LocalDateTime.now())

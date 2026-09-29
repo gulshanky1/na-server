@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ApiErrorResponse {
 
-    private boolean success;
+    private boolean error;
     private String message;
     private int status;
     private LocalDateTime timestamp;

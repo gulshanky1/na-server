@@ -97,9 +97,9 @@ public class CourseTransformer {
                 request.getDescription().trim()
         );
 
-        course.setImageUrl(
-                request.getImageUrl()
-        );
+        if (request.getImageUrl() != null) {
+            course.setImageUrl(request.getImageUrl());
+        }
 
         course.setDuration(
                 request.getDuration().trim()

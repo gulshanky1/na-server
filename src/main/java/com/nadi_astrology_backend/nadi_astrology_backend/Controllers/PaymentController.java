@@ -7,13 +7,16 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.ApiRespons
 import com.nadi_astrology_backend.nadi_astrology_backend.Service.PaymentService;
 import com.nadi_astrology_backend.nadi_astrology_backend.Service.RazorpayService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
+@Validated
 public class PaymentController {
 
     private final RazorpayService razorpayService;
@@ -21,7 +24,9 @@ public class PaymentController {
 
     @PostMapping("/create/{orderId}")
     public ResponseEntity<ApiResponse<RazorpayOrderResponse>> createRazorpayOrder(
-            @PathVariable Long orderId
+            @PathVariable
+            @Positive(message = "Order ID must be greater than 0")
+            Long orderId
     ) {
 
         RazorpayOrderResponse razorpayOrder =

@@ -6,6 +6,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+
 import java.util.Optional;
 
 import java.util.List;
@@ -29,5 +32,15 @@ public interface OrderItemRepository
             @Param("orderId") Long orderId,
             @Param("productType") ProductType productType,
             @Param("referenceId") Long referenceId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT oi
+        FROM OrderItem oi
+        WHERE oi.orderItemId = :orderItemId
+        """)
+    Optional<OrderItem> findByIdForUpdate(
+            @Param("orderItemId") Long orderItemId
     );
 }

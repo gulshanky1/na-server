@@ -10,10 +10,26 @@ import java.time.LocalDateTime;
 @Table(
         name = "blogs",
         indexes = {
-                @Index(name = "idx_blog_slug", columnList = "slug"),
-                @Index(name = "idx_blog_status", columnList = "status"),
-                @Index(name = "idx_blog_published_at", columnList = "published_at"),
-                @Index(name = "idx_blog_featured", columnList = "featured")
+                @Index(
+                        name = "idx_blog_slug",
+                        columnList = "slug"
+                ),
+                @Index(
+                        name = "idx_blog_status",
+                        columnList = "status"
+                ),
+                @Index(
+                        name = "idx_blog_published_at",
+                        columnList = "published_at"
+                ),
+                @Index(
+                        name = "idx_blog_featured",
+                        columnList = "featured"
+                ),
+                @Index(
+                        name = "idx_blog_status_published",
+                        columnList = "status, published_at"
+                )
         }
 )
 @Getter
@@ -27,16 +43,26 @@ public class Blog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long blogId;
 
-    @Column(nullable = false, length = 250)
+    @Column(
+            nullable = false,
+            length = 250
+    )
     private String title;
 
-    @Column(nullable = false, unique = true, length = 300)
+    @Column(
+            nullable = false,
+            unique = true,
+            length = 300
+    )
     private String slug;
 
     @Column(length = 500)
     private String shortDescription;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    @Column(
+            nullable = false,
+            columnDefinition = "TEXT"
+    )
     private String content;
 
     @Column(length = 500)
@@ -58,7 +84,10 @@ public class Blog {
     private String metaDescription;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(
+            nullable = false,
+            length = 30
+    )
     @Builder.Default
     private BlogStatus status = BlogStatus.DRAFT;
 
@@ -70,11 +99,6 @@ public class Blog {
     @Builder.Default
     private long viewCount = 0L;
 
-    /*
-     * Estimated reading time in minutes.
-     * Example:
-     * 5 = 5 min read
-     */
     @Column(nullable = false)
     @Builder.Default
     private Integer readTime = 1;
@@ -82,9 +106,11 @@ public class Blog {
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
 
-    @Column(nullable = false, updatable = false)
+    @Column(
+            nullable = false,
+            updatable = false
+    )
     private LocalDateTime createdAt;
-
 
     @Column(nullable = false)
     private LocalDateTime updatedAt;

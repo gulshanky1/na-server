@@ -1,7 +1,7 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Service;
 
-import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.CustomerServiceFulfillmentResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.ServiceFulfillmentUpdateRequest;
+import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.CustomerServiceFulfillmentResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.ServiceFulfillmentResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.ProductType;
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.ServiceFulfillmentStatus;
@@ -20,7 +20,10 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Transformers.ServiceFul
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
 
 @org.springframework.stereotype.Service
 @RequiredArgsConstructor
@@ -31,13 +34,16 @@ public class ServiceFulfillmentService {
     private final ServiceRepository serviceRepository;
     private final ServiceFulfillmentTransformer transformer;
     private final CustomerServiceFulfillmentTransformer customerTransformer;
+    private final EmailService emailService;
 
     /**
      * Creates fulfillment after successful payment.
      *
-     * This method is intentionally idempotent.
-     * If fulfillment already exists for the order item,
-     * it simply returns the existing record.
+     * Concurrency safe:
+     * - Locks the OrderItem row.
+     * - Checks for an existing fulfillment.
+     * - Database unique constraint should also exist
+     *   on ServiceFulfillment.orderItem.
      */
     @Transactional
     public ServiceFulfillmentResponse createFulfillment(
@@ -45,31 +51,40 @@ public class ServiceFulfillmentService {
     ) {
 
         if (orderItemId == null) {
-            throw new BadRequestException("Order item ID is required");
+            throw new BadRequestException(
+                    "Order item ID is required"
+            );
         }
 
         /*
-         * Prevent duplicate fulfillment.
-         */
-        var existing =
-                serviceFulfillmentRepository
-                        .findByOrderItem_OrderItemId(orderItemId);
-
-        if (existing.isPresent()) {
-            return transformer.toResponse(existing.get());
-        }
-
-        /*
-         * Find order item.
+         * Lock the OrderItem first.
+         *
+         * This serializes concurrent fulfillment requests
+         * for the same order item.
          */
         OrderItem orderItem =
-                orderItemRepository.findById(orderItemId)
+                orderItemRepository
+                        .findByIdForUpdate(orderItemId)
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
                                         "Order item not found with id: "
                                                 + orderItemId
                                 )
                         );
+
+        /*
+         * Check whether fulfillment already exists.
+         */
+        var existing =
+                serviceFulfillmentRepository
+                        .findByOrderItem_OrderItemId(orderItemId);
+
+        if (existing.isPresent()) {
+
+            return transformer.toResponse(
+                    existing.get()
+            );
+        }
 
         /*
          * Product must exist.
@@ -140,22 +155,12 @@ public class ServiceFulfillmentService {
                         .build();
 
         ServiceFulfillment saved =
-                serviceFulfillmentRepository.save(fulfillment);
+                serviceFulfillmentRepository.save(
+                        fulfillment
+                );
 
         return transformer.toResponse(saved);
     }
-
-    /**
-     * Get a service fulfillment by ID for a customer.
-     *
-     * Only the owner of the order can access it.
-     */
-
-
-    /**
-     * Get all service fulfillments belonging
-     * to the authenticated customer.
-     */
 
     @Transactional(readOnly = true)
     public CustomerServiceFulfillmentResponse getMyCustomerFulfillment(
@@ -204,10 +209,6 @@ public class ServiceFulfillmentService {
                 .map(customerTransformer::toResponse);
     }
 
-    /**
-     * ADMIN:
-     * Get all service fulfillments.
-     */
     @Transactional(readOnly = true)
     public Page<ServiceFulfillmentResponse> getAllFulfillments(
             Pageable pageable
@@ -242,7 +243,6 @@ public class ServiceFulfillmentService {
         return transformer.toResponse(fulfillment);
     }
 
-
     @Transactional(readOnly = true)
     public Page<ServiceFulfillmentResponse> getByStatus(
             ServiceFulfillmentStatus status,
@@ -260,10 +260,6 @@ public class ServiceFulfillmentService {
                 .map(transformer::toResponse);
     }
 
-    /**
-     * ADMIN:
-     * Update report, notes and status.
-     */
     @Transactional
     public ServiceFulfillmentResponse updateFulfillment(
             Long fulfillmentId,
@@ -292,35 +288,26 @@ public class ServiceFulfillmentService {
                                 )
                         );
 
-        /*
-         * Update report if supplied.
-         */
+        ServiceFulfillmentStatus oldStatus =
+                fulfillment.getStatus();
+
         if (request.getReport() != null) {
             fulfillment.setReport(
                     request.getReport().trim()
             );
         }
 
-        /*
-         * Update internal admin notes.
-         */
         if (request.getAdminNotes() != null) {
             fulfillment.setAdminNotes(
                     request.getAdminNotes().trim()
             );
         }
 
-        /*
-         * Update status.
-         */
         if (request.getStatus() != null) {
 
             ServiceFulfillmentStatus newStatus =
                     request.getStatus();
 
-            /*
-             * COMPLETED requires a report.
-             */
             if (newStatus ==
                     ServiceFulfillmentStatus.COMPLETED) {
 
@@ -334,14 +321,10 @@ public class ServiceFulfillmentService {
                 }
 
                 fulfillment.setCompletedAt(
-                        java.time.LocalDateTime.now()
+                        LocalDateTime.now()
                 );
             }
 
-            /*
-             * If service moves away from COMPLETED,
-             * remove completed timestamp.
-             */
             if (newStatus !=
                     ServiceFulfillmentStatus.COMPLETED) {
 
@@ -356,13 +339,95 @@ public class ServiceFulfillmentService {
                         fulfillment
                 );
 
+        if (request.getStatus() ==
+                ServiceFulfillmentStatus.COMPLETED
+                && oldStatus !=
+                ServiceFulfillmentStatus.COMPLETED) {
+
+            sendCompletionEmail(saved);
+        }
+
         return transformer.toResponse(saved);
     }
 
-    /**
-     * ADMIN:
-     * Start working on a service.
-     */
+    private void sendCompletionEmail(
+            ServiceFulfillment fulfillment
+    ) {
+
+        OrderItem orderItem =
+                fulfillment.getOrderItem();
+
+        if (orderItem == null
+                || orderItem.getOrder() == null
+                || orderItem.getOrder().getUser() == null) {
+            return;
+        }
+
+        String customerEmail =
+                orderItem.getOrder().getUser().getEmail();
+
+        String customerName =
+                orderItem.getOrder().getUser().getFullName();
+
+        String serviceName =
+                orderItem.getProduct() != null
+                        ? orderItem.getProduct().getName()
+                        : "Astrology Service";
+
+        String orderNumber =
+                orderItem.getOrder().getOrderNumber();
+
+        String subject =
+                "Your Nadi Astrology Service %s is Ready"
+                        .formatted(serviceName);
+
+        String htmlContent =
+                """
+                <html>
+                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+
+                    <h2>Your Service Report is Ready</h2>
+
+                    <p>Hello %s,</p>
+
+                    <p>
+                        Your <strong>%s</strong> service report has been completed
+                        and is now available in your Nadi Astrology account.
+                    </p>
+
+                    <p>
+                        <strong>Service:</strong> %s<br>
+                        <strong>Order:</strong> %s
+                    </p>
+
+                    <p>
+                        Please log in to your account to view your complete report.
+                    </p>
+
+                    <p>
+                        Regards,<br>
+                        <strong>Nadi Astrology</strong>
+                    </p>
+
+                </body>
+                </html>
+                """
+                        .formatted(
+                                customerName != null
+                                        ? customerName
+                                        : "Customer",
+                                serviceName,
+                                serviceName,
+                                orderNumber
+                        );
+
+        emailService.sendHtmlEmail(
+                customerEmail,
+                subject,
+                htmlContent
+        );
+    }
+
     @Transactional
     public ServiceFulfillmentResponse startFulfillment(
             Long fulfillmentId
@@ -406,10 +471,6 @@ public class ServiceFulfillmentService {
         return transformer.toResponse(saved);
     }
 
-    /**
-     * ADMIN:
-     * Cancel a service fulfillment.
-     */
     @Transactional
     public ServiceFulfillmentResponse cancelFulfillment(
             Long fulfillmentId

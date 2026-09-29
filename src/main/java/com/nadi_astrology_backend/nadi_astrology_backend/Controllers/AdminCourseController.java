@@ -1,19 +1,28 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Controllers;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.CourseRequest;
+import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.ApiResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.CourseResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Service.CourseService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/admin/courses")
 @RequiredArgsConstructor
+@Validated
 public class AdminCourseController {
 
     private final CourseService courseService;
@@ -23,12 +32,33 @@ public class AdminCourseController {
     // =========================================================
 
     @GetMapping
-    public ResponseEntity<Page<CourseResponse>> getAllCourses(
-            Pageable pageable
+    public ResponseEntity<ApiResponse<Page<CourseResponse>>> getAllCourses(
+
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "Page cannot be negative")
+            int page,
+
+            @RequestParam(defaultValue = "10")
+            @Min(value = 1, message = "Page size must be at least 1")
+            @Max(value = 50, message = "Page size cannot exceed 50")
+            int size
     ) {
-        return ResponseEntity.ok(
-                courseService.getAllCourses(pageable)
-        );
+
+        Pageable pageable =
+                PageRequest.of(page, size);
+
+        Page<CourseResponse> courses =
+                courseService.getAllCourses(pageable);
+
+        ApiResponse<Page<CourseResponse>> response =
+                new ApiResponse<>(
+                        false,
+                        200,
+                        "Courses fetched successfully",
+                        courses
+                );
+
+        return ResponseEntity.ok(response);
     }
 
     // =========================================================
@@ -36,12 +66,24 @@ public class AdminCourseController {
     // =========================================================
 
     @PostMapping
-    public ResponseEntity<CourseResponse> createCourse(
+    public ResponseEntity<ApiResponse<CourseResponse>> createCourse(
             @Valid @RequestBody CourseRequest request
     ) {
-        return ResponseEntity.ok(
-                courseService.createCourse(request)
-        );
+
+        CourseResponse course =
+                courseService.createCourse(request);
+
+        ApiResponse<CourseResponse> response =
+                new ApiResponse<>(
+                        false,
+                        201,
+                        "Course created successfully",
+                        course
+                );
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(response);
     }
 
     // =========================================================
@@ -49,13 +91,30 @@ public class AdminCourseController {
     // =========================================================
 
     @PutMapping("/{courseId}")
-    public ResponseEntity<CourseResponse> updateCourse(
-            @PathVariable Long courseId,
+    public ResponseEntity<ApiResponse<CourseResponse>> updateCourse(
+
+            @PathVariable
+            @Positive(message = "Course ID must be greater than 0")
+            Long courseId,
+
             @Valid @RequestBody CourseRequest request
     ) {
-        return ResponseEntity.ok(
-                courseService.updateCourse(courseId, request)
-        );
+
+        CourseResponse course =
+                courseService.updateCourse(
+                        courseId,
+                        request
+                );
+
+        ApiResponse<CourseResponse> response =
+                new ApiResponse<>(
+                        false,
+                        200,
+                        "Course updated successfully",
+                        course
+                );
+
+        return ResponseEntity.ok(response);
     }
 
     // =========================================================
@@ -63,12 +122,25 @@ public class AdminCourseController {
     // =========================================================
 
     @DeleteMapping("/{courseId}")
-    public ResponseEntity<CourseResponse> deactivateCourse(
-            @PathVariable Long courseId
+    public ResponseEntity<ApiResponse<CourseResponse>> deactivateCourse(
+
+            @PathVariable
+            @Positive(message = "Course ID must be greater than 0")
+            Long courseId
     ) {
-        return ResponseEntity.ok(
-                courseService.deactivateCourse(courseId)
-        );
+
+        CourseResponse course =
+                courseService.deactivateCourse(courseId);
+
+        ApiResponse<CourseResponse> response =
+                new ApiResponse<>(
+                        false,
+                        200,
+                        "Course deactivated successfully",
+                        course
+                );
+
+        return ResponseEntity.ok(response);
     }
 
     // =========================================================
@@ -79,12 +151,31 @@ public class AdminCourseController {
             value = "/{courseId}/image",
             consumes = "multipart/form-data"
     )
-    public ResponseEntity<CourseResponse> uploadCourseImage(
-            @PathVariable Long courseId,
-            @RequestParam("file") MultipartFile file
+    public ResponseEntity<ApiResponse<CourseResponse>> uploadCourseImage(
+
+            @PathVariable
+            @Positive(message = "Course ID must be greater than 0")
+            Long courseId,
+
+            @RequestParam("file")
+            @NotNull(message = "Image file is required")
+            MultipartFile file
     ) {
-        return ResponseEntity.ok(
-                courseService.uploadCourseImage(courseId, file)
-        );
+
+        CourseResponse course =
+                courseService.uploadCourseImage(
+                        courseId,
+                        file
+                );
+
+        ApiResponse<CourseResponse> response =
+                new ApiResponse<>(
+                        false,
+                        200,
+                        "Course image uploaded successfully",
+                        course
+                );
+
+        return ResponseEntity.ok(response);
     }
 }

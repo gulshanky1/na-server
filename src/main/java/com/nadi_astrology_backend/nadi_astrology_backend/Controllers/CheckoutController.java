@@ -4,6 +4,9 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.CheckoutReq
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.OrderResponse;
 import com.nadi_astrology_backend.nadi_astrology_backend.Service.CheckoutService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -11,15 +14,16 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/checkout")
 @RequiredArgsConstructor
+@Validated
 public class CheckoutController {
 
     private final CheckoutService checkoutService;
-
 
     // ============================================================
     // CREATE CHECKOUT
@@ -38,7 +42,6 @@ public class CheckoutController {
                 .body(response);
     }
 
-
     // ============================================================
     // GET MY ORDERS
     // ============================================================
@@ -46,16 +49,14 @@ public class CheckoutController {
     @GetMapping("/my-orders")
     public ResponseEntity<Page<OrderResponse>> getMyOrders(
 
-            @RequestParam(
-                    defaultValue = "0"
-            )
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "Page cannot be negative")
             int page,
 
-            @RequestParam(
-                    defaultValue = "10"
-            )
+            @RequestParam(defaultValue = "10")
+            @Min(value = 1, message = "Page size must be at least 1")
+            @Max(value = 50, message = "Page size cannot exceed 50")
             int size
-
     ) {
 
         Pageable pageable =
@@ -73,14 +74,15 @@ public class CheckoutController {
         );
     }
 
-
     // ============================================================
     // GET MY ORDER BY ID
     // ============================================================
 
     @GetMapping("/my-orders/{orderId}")
     public ResponseEntity<OrderResponse> getMyOrder(
-            @PathVariable Long orderId
+            @PathVariable
+            @Positive(message = "Order ID must be greater than 0")
+            Long orderId
     ) {
 
         return ResponseEntity.ok(

@@ -5,6 +5,8 @@ import com.nadi_astrology_backend.nadi_astrology_backend.Models.Order;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -38,5 +40,33 @@ public interface OrderRepository
 
     List<Order> findTop5ByStatusOrderByCreatedAtDesc(
             OrderStatus status
+    );
+
+    @Query("""
+            SELECT o
+            FROM Order o
+            JOIN o.user u
+            WHERE
+                (
+                    :search IS NULL
+                    OR :search = ''
+                    OR LOWER(o.orderNumber)
+                        LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR LOWER(u.fullName)
+                        LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR LOWER(u.email)
+                        LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR LOWER(u.phone)
+                        LIKE LOWER(CONCAT('%', :search, '%'))
+                )
+            AND (
+                :status IS NULL
+                OR o.status = :status
+            )
+            """)
+    Page<Order> searchAdminOrders(
+            @Param("search") String search,
+            @Param("status") OrderStatus status,
+            Pageable pageable
     );
 }

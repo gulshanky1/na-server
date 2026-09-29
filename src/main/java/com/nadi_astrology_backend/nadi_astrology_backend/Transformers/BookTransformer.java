@@ -1,4 +1,4 @@
-package com.nadi_astrology_backend.nadi_astrology_backend.Dto.Transformer;
+package com.nadi_astrology_backend.nadi_astrology_backend.Transformers;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request.BookRequest;
 import com.nadi_astrology_backend.nadi_astrology_backend.Dto.Response.BookResponse;
@@ -34,7 +34,10 @@ public class BookTransformer {
         book.setAuthor(request.getAuthor());
         book.setShortDescription(request.getShortDescription());
         book.setDescription(request.getDescription());
-        book.setImageUrl(request.getImageUrl());
+        if (request.getImageUrl() != null) {
+            book.setImageUrl(request.getImageUrl());
+        }
+
         book.setPrice(request.getPrice());
         book.setStockQuantity(request.getStockQuantity());
         book.setIsbn(request.getIsbn());

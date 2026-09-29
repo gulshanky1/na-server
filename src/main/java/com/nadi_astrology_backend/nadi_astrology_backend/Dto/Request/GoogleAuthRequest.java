@@ -1,5 +1,7 @@
 package com.nadi_astrology_backend.nadi_astrology_backend.Dto.Request;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 @Getter
@@ -9,11 +11,7 @@ import lombok.*;
 @Builder
 public class GoogleAuthRequest {
 
-    private String email;
-
-    private String fullName;
-
-    private String providerId;
-
-    private String profileImage;
+    @NotBlank(message = "Google ID token is required")
+    @Size(max = 4096, message = "Google ID token is too long")
+    private String idToken;
 }

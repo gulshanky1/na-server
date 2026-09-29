@@ -2,6 +2,7 @@ package com.nadi_astrology_backend.nadi_astrology_backend.Repositories;
 
 import com.nadi_astrology_backend.nadi_astrology_backend.Enum.EnrollmentStatus;
 import com.nadi_astrology_backend.nadi_astrology_backend.Models.CourseEnrollment;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.*;
@@ -14,7 +15,6 @@ import java.util.Optional;
 @Repository
 public interface CourseEnrollmentRepository
         extends JpaRepository<CourseEnrollment, Long> {
-
 
     // ============================================================
     // CHECK ENROLLMENT
@@ -34,6 +34,32 @@ public interface CourseEnrollmentRepository
     findByStudent_StudentIdAndCourse_CourseId(
             Long studentId,
             Long courseId
+    );
+
+
+    // ============================================================
+    // FIND SPECIFIC ENROLLMENT FOR UPDATE
+    // ============================================================
+
+    /*
+     * Used when checking an enrollment before creating it.
+     *
+     * Important:
+     * A row-level lock can only lock an existing row.
+     *
+     * The database UNIQUE constraint on student + course remains
+     * the final protection against duplicate enrollment.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT e
+            FROM CourseEnrollment e
+            WHERE e.student.studentId = :studentId
+            AND e.course.courseId = :courseId
+            """)
+    Optional<CourseEnrollment> findForUpdate(
+            @Param("studentId") Long studentId,
+            @Param("courseId") Long courseId
     );
 
 
@@ -101,6 +127,7 @@ public interface CourseEnrollmentRepository
             EnrollmentStatus status
     );
 
+
     // ============================================================
     // STUDENT - ACTIVE ENROLLMENTS BY USER ID
     // ============================================================
@@ -119,20 +146,19 @@ public interface CourseEnrollmentRepository
 
 
     // ============================================================
-// ACTIVE STUDENTS BY COURSE
-// ============================================================
+    // ACTIVE STUDENTS BY COURSE
+    // ============================================================
 
     @Query("""
-        SELECT e
-        FROM CourseEnrollment e
-        JOIN FETCH e.student s
-        JOIN FETCH s.user u
-        WHERE e.course.courseId = :courseId
-        AND e.status = :status
-        """)
+            SELECT e
+            FROM CourseEnrollment e
+            JOIN FETCH e.student s
+            JOIN FETCH s.user u
+            WHERE e.course.courseId = :courseId
+            AND e.status = :status
+            """)
     List<CourseEnrollment> findActiveEnrollmentsByCourseId(
             @Param("courseId") Long courseId,
             @Param("status") EnrollmentStatus status
     );
-
 }

@@ -23,12 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserRepository userRepository;
-
     private final StudentRepository studentRepository;
-
     private final UserTransformer userTransformer;
-
     private final PasswordEncoder passwordEncoder;
+    private final EmailVerificationService emailVerificationService;
 
 
     // ============================================================
@@ -39,33 +37,16 @@ public class UserService {
             UserRequest request
     ) {
 
-        /*
-         * Normalize email
-         *
-         * Example:
-         * Rahul@Gmail.com
-         *       ↓
-         * rahul@gmail.com
-         */
         String email = request.getEmail()
                 .trim()
                 .toLowerCase();
 
-
-        /*
-         * Check duplicate email
-         */
         if (userRepository.existsByEmail(email)) {
-
             throw new DuplicateResourceException(
                     "Email already registered"
             );
         }
 
-
-        /*
-         * Check duplicate phone
-         */
         if (request.getPhone() != null
                 && !request.getPhone().isBlank()
                 && userRepository.existsByPhone(
@@ -77,60 +58,38 @@ public class UserService {
             );
         }
 
-
-        /*
-         * Convert DTO -> Entity
-         */
         User user =
                 userTransformer.toEntity(request);
 
-
-        /*
-         * Always USER during public registration.
-         *
-         * Client cannot send:
-         *
-         * "role": "ADMIN"
-         *
-         * and become an admin.
-         */
         user.setEmail(email);
 
         user.setRole(Role.USER);
 
+        user.setAuthProvider(
+                com.nadi_astrology_backend.nadi_astrology_backend.Enum.AuthProvider.LOCAL
+        );
 
-        /*
-         * Encode password before saving.
-         */
+        user.setEmailVerified(false);
+
+        user.setAccountEnabled(true);
+
         user.setPassword(
                 passwordEncoder.encode(
                         request.getPassword()
                 )
         );
 
-
-        /*
-         * Save User
-         */
         User savedUser =
                 userRepository.save(user);
 
+        emailVerificationService
+                .createAndSendVerificationToken(
+                        savedUser
+                );
 
-        /*
-         * Newly registered user is NOT a Student.
-         *
-         * Student will be created after successful
-         * course purchase/payment.
-         */
-        boolean student = false;
-
-
-        /*
-         * Convert Entity -> Response
-         */
         return userTransformer.toResponse(
                 savedUser,
-                student
+                false
         );
     }
 

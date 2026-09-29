@@ -10,11 +10,8 @@ import java.util.Optional;
 public interface KundaliMilanDetailsRepository
         extends JpaRepository<KundaliMilanDetails, Long> {
 
-    Optional<KundaliMilanDetails> findByOrderItem_OrderItemId(
-            Long orderItemId
-    );
+    Optional<KundaliMilanDetails>
+    findByOrderItem_OrderItemId(Long orderItemId);
 
-    boolean existsByOrderItem_OrderItemId(
-            Long orderItemId
-    );
+    boolean existsByOrderItem_OrderItemId(Long orderItemId);
 }
